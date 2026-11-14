@@ -40,9 +40,7 @@ async function getDashboardStats(caretakerId) {
   const onlineCutoff = new Date(Date.now() - env.OFFLINE_THRESHOLD_MS);
 
   const [patients, alertsToday, unreadAlerts, criticalToday] = await Promise.all([
-    Patient.find({ caretaker: caretakerId, isActive: true })
-      .select('name liveStatus')
-      .lean(),
+    Patient.find({ caretaker: caretakerId, isActive: true }).select('name liveStatus').lean(),
     Alert.countDocuments({ caretaker: caretakerId, createdAt: { $gte: startOfToday() } }),
     Alert.countDocuments({ caretaker: caretakerId, isRead: false }),
     Alert.countDocuments({
@@ -364,9 +362,7 @@ async function getHistorySummary({ patientId, from, to }) {
     fixCount: points.length,
     distanceMetres: Math.round(distance),
     distanceKm: Number((distance / 1000).toFixed(2)),
-    durationMinutes: Math.round(
-      (new Date(last.recordedAt) - new Date(first.recordedAt)) / 60000
-    ),
+    durationMinutes: Math.round((new Date(last.recordedAt) - new Date(first.recordedAt)) / 60000),
     minutesOutsideSafeZone: Math.round(msOutside / 60000),
     maxDistanceFromHome: Math.round(maxFromHome),
     firstFixAt: first.recordedAt,

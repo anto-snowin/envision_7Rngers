@@ -82,14 +82,26 @@ async function ingestFix(patient, rawFix) {
   });
 
   // 3. Refresh the denormalised snapshot the dashboard reads.
+  //
+  // Battery is "last known" rather than "last reported": the Battery Status
+  // API is unavailable in Firefox and Safari, and queued fixes may predate a
+  // reading, so a fix without a battery level must not erase the level we
+  // already had. Position fields always come from the current fix.
+  const previousStatus = patient.liveStatus || {};
+  const batteryLevel = Number.isFinite(fix.batteryLevel)
+    ? fix.batteryLevel
+    : (previousStatus.batteryLevel ?? null);
+  const isCharging =
+    typeof fix.isCharging === 'boolean' ? fix.isCharging : (previousStatus.isCharging ?? null);
+
   patient.liveStatus = {
     isOnline: true,
     latitude: fix.latitude,
     longitude: fix.longitude,
     accuracy: fix.accuracy,
     speed: fix.speed,
-    batteryLevel: fix.batteryLevel,
-    isCharging: fix.isCharging,
+    batteryLevel,
+    isCharging,
     zoneState: evaluation.zoneState,
     activeDangerZones: evaluation.dangerZoneIds,
     distanceFromHome: evaluation.distanceFromHome,
@@ -107,8 +119,8 @@ async function ingestFix(patient, rawFix) {
     accuracy: fix.accuracy,
     speed: fix.speed,
     heading: fix.heading,
-    batteryLevel: fix.batteryLevel,
-    isCharging: fix.isCharging,
+    batteryLevel,
+    isCharging,
     zoneState: evaluation.zoneState,
     isInsideSafeZone: evaluation.isInsideSafeZone,
     distanceFromHome: evaluation.distanceFromHome,
@@ -187,7 +199,9 @@ async function getHistory(patientId, { from, to, limit = 2000 } = {}) {
   const points = await Location.find(query)
     .sort({ recordedAt: 1 })
     .limit(limit)
-    .select('latitude longitude accuracy speed zoneState isInsideSafeZone distanceFromHome isQueued recordedAt')
+    .select(
+      'latitude longitude accuracy speed zoneState isInsideSafeZone distanceFromHome isQueued recordedAt'
+    )
     .lean();
 
   return points;
@@ -197,7 +211,10 @@ async function getHistory(patientId, { from, to, limit = 2000 } = {}) {
 async function markOffline(patient, reason = 'timeout') {
   await Patient.updateOne(
     { _id: patient._id },
-    { 'liveStatus.isOnline': false, 'liveStatus.zoneState': patient.liveStatus?.zoneState || ZONE_STATE.UNKNOWN }
+    {
+      'liveStatus.isOnline': false,
+      'liveStatus.zoneState': patient.liveStatus?.zoneState || ZONE_STATE.UNKNOWN,
+    }
   );
 
   emitter.emitToCaretaker(patient.caretaker, SOCKET_EVENTS.PRESENCE_UPDATE, {

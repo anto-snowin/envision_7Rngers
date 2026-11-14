@@ -33,7 +33,8 @@ function normaliseKnownErrors(err) {
   // Unique index violation
   if (err.code === 11000) {
     const field = Object.keys(err.keyValue || {})[0] || 'field';
-    const label = field === 'email' ? 'An account with this email already exists' : `Duplicate ${field}`;
+    const label =
+      field === 'email' ? 'An account with this email already exists' : `Duplicate ${field}`;
     return ApiError.conflict(label);
   }
 
@@ -54,7 +55,8 @@ function normaliseKnownErrors(err) {
  * Operational errors are reported to the client as-is. Anything unexpected is
  * logged in full and replaced with a generic 500 so internals never leak.
  */
-// eslint-disable-next-line no-unused-vars -- Express needs the 4-arg signature
+// Express identifies an error handler by its four-argument signature, so the
+// unused `_next` must stay in the list.
 function errorHandler(err, req, res, _next) {
   const apiError = err instanceof ApiError ? err : normaliseKnownErrors(err);
 

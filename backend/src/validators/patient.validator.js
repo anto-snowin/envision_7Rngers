@@ -46,7 +46,10 @@ const updatePatientSchema = createPatientSchema.partial().extend({
 /** List query: pagination plus dashboard-specific filters. */
 const listPatientsSchema = pagination.extend({
   status: z.enum(['all', 'online', 'offline']).optional().default('all'),
-  zone: z.enum(['all', 'inside_safe', 'outside_safe', 'in_danger', 'unknown']).optional().default('all'),
+  zone: z
+    .enum(['all', 'inside_safe', 'outside_safe', 'in_danger', 'unknown'])
+    .optional()
+    .default('all'),
 });
 
 module.exports = {

@@ -57,7 +57,10 @@ const createDangerZoneSchema = z.object({
 const updateDangerZoneSchema = createDangerZoneSchema.partial();
 
 const listDangerZoneSchema = pagination.extend({
-  category: z.enum(['all', ...DANGER_ZONE_CATEGORIES]).optional().default('all'),
+  category: z
+    .enum(['all', ...DANGER_ZONE_CATEGORIES])
+    .optional()
+    .default('all'),
   patient: objectId.optional(),
 });
 

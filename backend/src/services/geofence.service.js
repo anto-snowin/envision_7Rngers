@@ -111,9 +111,7 @@ async function evaluateFix({ patient, point, recordedAt = new Date(), silent = f
     const wasOutside = previous.zoneState === ZONE_STATE.OUTSIDE_SAFE;
 
     // Hysteresis: leaving needs radius + buffer, returning just needs radius.
-    const isOutside = wasOutside
-      ? distance > geofence.radius
-      : distance > geofence.radius + buffer;
+    const isOutside = wasOutside ? distance > geofence.radius : distance > geofence.radius + buffer;
 
     result.isInsideSafeZone = !isOutside;
     result.zoneState = isOutside ? ZONE_STATE.OUTSIDE_SAFE : ZONE_STATE.INSIDE_SAFE;
@@ -126,7 +124,11 @@ async function evaluateFix({ patient, point, recordedAt = new Date(), silent = f
         message:
           `${patient.name} is ${formatMetres(distance - geofence.radius)} beyond the ` +
           `"${geofence.name}" safe zone.`,
-        location: { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy },
+        location: {
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+        },
         metadata: {
           zoneName: geofence.name,
           radius: geofence.radius,
@@ -142,7 +144,11 @@ async function evaluateFix({ patient, point, recordedAt = new Date(), silent = f
         patient,
         type: ALERT_TYPES.SAFE_ZONE_RETURN,
         message: `${patient.name} is back inside the "${geofence.name}" safe zone.`,
-        location: { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy },
+        location: {
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+        },
         metadata: { zoneName: geofence.name, detectedAt: recordedAt },
         geofence: geofence._id,
       });
@@ -175,7 +181,11 @@ async function evaluateFix({ patient, point, recordedAt = new Date(), silent = f
         message:
           `${patient.name} has entered the danger zone "${zone.name}"` +
           (zone.description ? ` — ${zone.description}` : '.'),
-        location: { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy },
+        location: {
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+        },
         metadata: {
           zoneName: zone.name,
           category: zone.category,
@@ -200,7 +210,11 @@ async function evaluateFix({ patient, point, recordedAt = new Date(), silent = f
         patient,
         type: ALERT_TYPES.LOW_BATTERY,
         message: `${patient.name}'s device battery is at ${Math.round(level)}%. Tracking may stop soon.`,
-        location: { latitude: point.latitude, longitude: point.longitude, accuracy: point.accuracy },
+        location: {
+          latitude: point.latitude,
+          longitude: point.longitude,
+          accuracy: point.accuracy,
+        },
         metadata: { batteryLevel: level, threshold: env.LOW_BATTERY_THRESHOLD },
       });
       if (alert) result.alerts.push(alert);

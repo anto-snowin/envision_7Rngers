@@ -54,10 +54,7 @@ const createGeofence = asyncHandler(async (req, res) => {
   if (!patient) throw ApiError.notFound('Patient not found');
 
   // One active zone per patient: retire any existing one.
-  await Geofence.updateMany(
-    { patient: patientId, isActive: true },
-    { isActive: false }
-  );
+  await Geofence.updateMany({ patient: patientId, isActive: true }, { isActive: false });
 
   const geofence = await Geofence.create({
     ...zoneData,

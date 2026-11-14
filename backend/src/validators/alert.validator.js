@@ -7,8 +7,14 @@ const { ALERT_TYPES, SEVERITY } = require('../utils/constants');
 
 /** GET /api/alerts — filterable, paginated feed. */
 const listAlertsSchema = pagination.extend({
-  type: z.enum(['all', ...Object.values(ALERT_TYPES)]).optional().default('all'),
-  severity: z.enum(['all', ...Object.values(SEVERITY)]).optional().default('all'),
+  type: z
+    .enum(['all', ...Object.values(ALERT_TYPES)])
+    .optional()
+    .default('all'),
+  severity: z
+    .enum(['all', ...Object.values(SEVERITY)])
+    .optional()
+    .default('all'),
   patient: objectId.optional(),
   status: z.enum(['all', 'unread', 'read', 'resolved', 'unresolved']).optional().default('all'),
   from: isoDate.optional(),

@@ -51,7 +51,12 @@ const historyQuerySchema = z.object({
  */
 const deviceEventSchema = z.object({
   trackingCode,
-  type: z.enum(['GPS_UNAVAILABLE', 'INTERNET_DISCONNECTED', 'INTERNET_RESTORED', 'TRACKING_STOPPED']),
+  type: z.enum([
+    'GPS_UNAVAILABLE',
+    'INTERNET_DISCONNECTED',
+    'INTERNET_RESTORED',
+    'TRACKING_STOPPED',
+  ]),
   message: z.string().trim().max(300).optional().default(''),
   metadata: z.record(z.string(), z.unknown()).optional().default({}),
 });

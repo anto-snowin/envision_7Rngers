@@ -11,7 +11,7 @@ function emit(level, args) {
   if (LEVELS[level] > threshold) return;
   const stamp = new Date().toISOString();
   const line = `[${stamp}] [${level.toUpperCase()}]`;
-  // eslint-disable-next-line no-console
+
   const sink = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
   sink(line, ...args);
 }

@@ -4,9 +4,7 @@
 const { z } = require('zod');
 
 /** A 24-character hex MongoDB ObjectId. */
-const objectId = z
-  .string()
-  .regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid id');
+const objectId = z.string().regex(/^[0-9a-fA-F]{24}$/, 'Must be a valid id');
 
 /** Route params carrying a single `:id`. */
 const idParam = z.object({ id: objectId });

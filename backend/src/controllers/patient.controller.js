@@ -10,7 +10,7 @@ const { SOCKET_EVENTS } = require('../utils/constants');
 const { generateTrackingCode } = require('../utils/tokens');
 const emitter = require('../sockets/emitter');
 const asyncHandler = require('../utils/asyncHandler');
-const ApiError = require('../utils/ApiError');
+
 const env = require('../config/env');
 const geofenceService = require('../services/geofence.service');
 const analyticsService = require('../services/analytics.service');
@@ -67,7 +67,9 @@ const listPatients = asyncHandler(async (req, res) => {
     ];
   }
 
-  const sortSpec = sort ? { [sort.replace(/^-/, '')]: sort.startsWith('-') ? -1 : 1 } : { createdAt: -1 };
+  const sortSpec = sort
+    ? { [sort.replace(/^-/, '')]: sort.startsWith('-') ? -1 : 1 }
+    : { createdAt: -1 };
 
   const [patients, total] = await Promise.all([
     Patient.find(query)

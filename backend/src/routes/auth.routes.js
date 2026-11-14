@@ -11,7 +11,12 @@ const schemas = require('../validators/auth.validator');
 const router = express.Router();
 
 // Public, rate limited to blunt brute-force attempts.
-router.post('/register', authLimiter, validate({ body: schemas.registerSchema }), controller.register);
+router.post(
+  '/register',
+  authLimiter,
+  validate({ body: schemas.registerSchema }),
+  controller.register
+);
 router.post('/login', authLimiter, validate({ body: schemas.loginSchema }), controller.login);
 
 // Everything below needs a valid token.

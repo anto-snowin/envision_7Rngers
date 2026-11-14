@@ -16,11 +16,7 @@ const password = z
   .regex(/[A-Z]/, 'Password must contain an uppercase letter')
   .regex(/[0-9]/, 'Password must contain a number');
 
-const email = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .pipe(z.email('Enter a valid email address'));
+const email = z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address'));
 
 const registerSchema = z.object({
   name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),

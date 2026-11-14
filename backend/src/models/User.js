@@ -60,11 +60,15 @@ const userSchema = new mongoose.Schema(
   }
 );
 
-/** Hash the password whenever it is set or changed. */
-userSchema.pre('save', async function hashPassword(next) {
-  if (!this.isModified('password')) return next();
+/**
+ * Hash the password whenever it is set or changed.
+ *
+ * Declared `async` with no `next` parameter: Mongoose 9 resolves the returned
+ * promise and no longer supplies a callback to async middleware.
+ */
+userSchema.pre('save', async function hashPassword() {
+  if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, SALT_ROUNDS);
-  return next();
 });
 
 /** Compare a plaintext candidate against the stored hash. */

@@ -76,7 +76,8 @@ const startTrackingSession = asyncHandler(async (req, res) => {
  * One live GPS fix from the patient's phone.
  */
 const createLocation = asyncHandler(async (req, res) => {
-  const { trackingCode, sessionId, ...fix } = req.body;
+  // trackingCode is consumed by the auth middleware; strip it from the fix.
+  const { trackingCode: _code, sessionId, ...fix } = req.body;
 
   const { payload, evaluation } = await locationService.ingestFix(req.patient, fix);
 
