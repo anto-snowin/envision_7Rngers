@@ -1,0 +1,22 @@
+{
+  "name": "dementia-care-backend",
+  "version": "1.0.0",
+  "private": true,
+  "description": "REST + Socket.IO API for the Dementia Care Monitoring and Intelligent Geofencing System",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js",
+    "seed": "node src/jobs/seed.js",
+    "lint": "eslint src",
+    "lint:fix": "eslint src --fix",
+    "format": "prettier --write \"src/**/*.js\"",
+    "format:check": "prettier --check \"src/**/*.js\""
+  },
+  "keywords": ["dementia", "geofencing", "gps", "healthcare", "socket.io"],
+  "license": "MIT"
+}
