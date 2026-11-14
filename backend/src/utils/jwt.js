@@ -9,14 +9,24 @@ const ISSUER = 'dementia-care-api';
 
 /**
  * Sign an access token for a caretaker.
+ *
+ * `sessionId` is embedded as the `sid` claim so that signing out can revoke
+ * this specific token server-side, before its natural expiry.
+ *
  * @param {{id?:string, _id?:string, email:string, role?:string}} user
+ * @param {{sessionId?:string, expiresIn?:string}} [options]
  */
-function signToken(user, expiresIn = env.JWT_EXPIRES_IN) {
-  return jwt.sign(
-    { sub: String(user.id || user._id), email: user.email, role: user.role || 'caretaker' },
-    env.JWT_SECRET,
-    { expiresIn, issuer: ISSUER }
-  );
+function signToken(user, options = {}) {
+  const { sessionId, expiresIn = env.JWT_EXPIRES_IN } = options;
+
+  const payload = {
+    sub: String(user.id || user._id),
+    email: user.email,
+    role: user.role || 'caretaker',
+  };
+  if (sessionId) payload.sid = sessionId;
+
+  return jwt.sign(payload, env.JWT_SECRET, { expiresIn, issuer: ISSUER });
 }
 
 /** Verify a token, converting library errors into clean 401s. */
