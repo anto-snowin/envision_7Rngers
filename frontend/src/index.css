@@ -1,0 +1,384 @@
+/**
+ * Global styles and design tokens.
+ *
+ * Tailwind v4 is configured here rather than in a JS config file: `@theme`
+ * declares the design tokens, which Tailwind turns into utility classes
+ * (`bg-brand-600`, `text-severity-critical`, and so on).
+ */
+@import 'tailwindcss';
+
+/**
+ * Dark mode is driven by a `.dark` class on <html> rather than the OS setting
+ * alone, so the caretaker can override it. The inline script in index.html
+ * sets the class before first paint; ThemeContext maintains it afterwards.
+ */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  /* ---------------------------------------------------------------- palette */
+
+  /*
+   * Brand: a desaturated teal. Healthcare software is looked at for hours at a
+   * time, often under stress, so the primary colour is calm rather than
+   * saturated, and every step is contrast-checked against both surfaces.
+   */
+  --color-brand-50: #f0fdfa;
+  --color-brand-100: #ccfbf1;
+  --color-brand-200: #99f6e4;
+  --color-brand-300: #5eead4;
+  --color-brand-400: #2dd4bf;
+  --color-brand-500: #14b8a6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #134e4a;
+  --color-brand-950: #042f2e;
+
+  /* Neutrals: slate, which reads cooler and less clinical than pure grey. */
+  --color-surface-0: #ffffff;
+  --color-surface-50: #f8fafc;
+  --color-surface-100: #f1f5f9;
+  --color-surface-200: #e2e8f0;
+  --color-surface-300: #cbd5e1;
+  --color-surface-400: #94a3b8;
+  --color-surface-500: #64748b;
+  --color-surface-600: #475569;
+  --color-surface-700: #334155;
+  --color-surface-800: #1e293b;
+  --color-surface-900: #0f172a;
+  --color-surface-950: #020617;
+
+  /*
+   * Severity scale. These are the only colours that carry meaning, so they are
+   * deliberately distinct in hue *and* lightness — a red/amber pair alone
+   * would be indistinguishable to a caretaker with deuteranopia, which is why
+   * every severity is also labelled with text and an icon in the UI.
+   */
+  --color-severity-critical: #e11d48; /* rose 600  */
+  --color-severity-high: #ea580c; /* orange 600 */
+  --color-severity-medium: #ca8a04; /* yellow 600 */
+  --color-severity-low: #0284c7; /* sky 600    */
+  --color-severity-info: #4f46e5; /* indigo 600 */
+
+  /* Lighter variants for dark-mode text, where the 600s go muddy. */
+  --color-severity-critical-soft: #fb7185;
+  --color-severity-high-soft: #fb923c;
+  --color-severity-medium-soft: #facc15;
+  --color-severity-low-soft: #38bdf8;
+  --color-severity-info-soft: #818cf8;
+
+  /* Map / status semantics */
+  --color-status-online: #16a34a;
+  --color-status-offline: #64748b;
+  --color-status-safe: #0d9488;
+  --color-status-danger: #e11d48;
+  --color-status-warning: #ea580c;
+
+  /* ------------------------------------------------------------- typography */
+
+  /*
+   * A system font stack: it renders instantly (no web-font round trip on a
+   * patient's mobile connection) and matches the device the caretaker already
+   * knows. Tabular numerals are applied where figures must line up.
+   */
+  --font-sans:
+    'Inter var', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue',
+    Arial, sans-serif;
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Mono', 'Roboto Mono', Menlo, monospace;
+
+  /* ----------------------------------------------------------------- motion */
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+
+  /* ---------------------------------------------------------------- shadows */
+
+  --shadow-card: 0 1px 2px rgb(15 23 42 / 0.04), 0 4px 16px -4px rgb(15 23 42 / 0.08);
+  --shadow-card-dark: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 20px -4px rgb(0 0 0 / 0.45);
+  --shadow-glass: 0 8px 32px -8px rgb(15 23 42 / 0.16);
+}
+
+/* -------------------------------------------------------------------- base */
+
+@layer base {
+  html {
+    /* Smooth in-page jumps, but never for users who asked for less motion. */
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+
+  body {
+    @apply bg-surface-50 font-sans text-surface-800 antialiased;
+    @apply dark:bg-surface-950 dark:text-surface-100;
+    /* Respect notches and the iOS home indicator. */
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+
+  /* A single, visible focus ring everywhere, for keyboard users. */
+  :focus-visible {
+    @apply outline-brand-500 outline-2 outline-offset-2;
+  }
+
+  /* Figures in tables and stat tiles must align column-wise. */
+  .tabular,
+  th,
+  td {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Slimmer scrollbars that follow the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-surface-300) transparent;
+  }
+  .dark * {
+    scrollbar-color: var(--color-surface-700) transparent;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply rounded-full bg-surface-300 dark:bg-surface-700;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-surface-400 dark:bg-surface-600;
+  }
+}
+
+/* -------------------------------------------------------------- components */
+
+@layer components {
+  /**
+   * Card: the standard content container.
+   */
+  .card {
+    @apply rounded-2xl border border-surface-200 bg-surface-0 shadow-[var(--shadow-card)];
+    @apply dark:border-surface-800 dark:bg-surface-900 dark:shadow-[var(--shadow-card-dark)];
+  }
+
+  /**
+   * Glass panel: used for elements that float over the map, where the
+   * underlying tiles should stay partly visible. A solid fallback colour is
+   * applied first so the text stays legible if `backdrop-filter` is
+   * unsupported (older Firefox, and Safari with "reduce transparency" on).
+   */
+  .glass {
+    @apply rounded-2xl border bg-white/90 shadow-[var(--shadow-glass)];
+    border-color: rgb(255 255 255 / 0.6);
+  }
+  .dark .glass {
+    background-color: rgb(15 23 42 / 0.88);
+    border-color: rgb(51 65 85 / 0.6);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .glass {
+      background-color: rgb(255 255 255 / 0.72);
+      -webkit-backdrop-filter: blur(16px) saturate(1.4);
+      backdrop-filter: blur(16px) saturate(1.4);
+    }
+    .dark .glass {
+      background-color: rgb(15 23 42 / 0.72);
+    }
+  }
+
+  /* Form controls ------------------------------------------------------- */
+
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-surface-700 dark:text-surface-300;
+  }
+
+  .input {
+    @apply w-full rounded-xl border border-surface-300 bg-surface-0 px-3.5 py-2.5 text-sm;
+    @apply text-surface-900 placeholder:text-surface-400;
+    @apply transition-colors duration-150;
+    @apply focus:border-brand-500 focus:ring-2 focus:ring-brand-500/25 focus:outline-none;
+    @apply dark:border-surface-700 dark:bg-surface-950 dark:text-surface-100;
+    @apply dark:placeholder:text-surface-500 dark:focus:border-brand-400;
+  }
+
+  .input-error {
+    @apply border-severity-critical focus:border-severity-critical;
+    @apply focus:ring-severity-critical/25;
+  }
+
+  .help-text {
+    @apply mt-1.5 text-xs text-surface-500 dark:text-surface-400;
+  }
+
+  .error-text {
+    @apply mt-1.5 text-xs font-medium text-severity-critical dark:text-severity-critical-soft;
+  }
+
+  /* Buttons ------------------------------------------------------------- */
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5;
+    @apply text-sm font-semibold whitespace-nowrap;
+    @apply transition-all duration-150;
+    @apply disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .btn-primary {
+    @apply bg-brand-600 text-white shadow-sm;
+    @apply hover:bg-brand-700 active:bg-brand-800;
+    @apply dark:bg-brand-500 dark:hover:bg-brand-400 dark:active:bg-brand-600 dark:text-brand-950;
+  }
+
+  .btn-secondary {
+    @apply border border-surface-300 bg-surface-0 text-surface-700;
+    @apply hover:bg-surface-100 active:bg-surface-200;
+    @apply dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200;
+    @apply dark:hover:bg-surface-800 dark:active:bg-surface-700;
+  }
+
+  .btn-ghost {
+    @apply text-surface-600 hover:bg-surface-100 hover:text-surface-900;
+    @apply dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100;
+  }
+
+  .btn-danger {
+    @apply bg-severity-critical text-white shadow-sm hover:brightness-110 active:brightness-95;
+  }
+
+  /* Badges -------------------------------------------------------------- */
+
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-full px-2.5 py-1;
+    @apply text-xs font-semibold whitespace-nowrap;
+  }
+
+  /* Sidebar navigation -------------------------------------------------- */
+
+  .nav-link {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium;
+    @apply text-surface-600 transition-colors duration-150;
+    @apply hover:bg-surface-100 hover:text-surface-900;
+    @apply dark:text-surface-400 dark:hover:bg-surface-800 dark:hover:text-surface-100;
+  }
+
+  .nav-link-active {
+    @apply bg-brand-50 text-brand-700;
+    @apply dark:bg-brand-950 dark:text-brand-300;
+  }
+}
+
+/* --------------------------------------------------------------- utilities */
+
+@layer utilities {
+  /* Skeleton placeholder shimmer. */
+  .skeleton {
+    @apply animate-pulse rounded-md bg-surface-200 dark:bg-surface-800;
+  }
+
+  /* Hide an element visually but keep it for screen readers. */
+  .sr-only-focusable:not(:focus):not(:focus-within) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  /* Bottom padding that clears the iOS home indicator. */
+  .pb-safe {
+    padding-bottom: calc(env(safe-area-inset-bottom) + 1rem);
+  }
+
+  /* The pulsing ring behind a live patient marker. */
+  @keyframes ping-slow {
+    0% {
+      transform: scale(1);
+      opacity: 0.55;
+    }
+    70%,
+    100% {
+      transform: scale(2.4);
+      opacity: 0;
+    }
+  }
+  .animate-ping-slow {
+    animation: ping-slow 2.4s var(--ease-out-soft) infinite;
+  }
+
+  /* SOS button attention pulse. */
+  @keyframes sos-pulse {
+    0%,
+    100% {
+      box-shadow: 0 0 0 0 rgb(225 29 72 / 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 18px rgb(225 29 72 / 0);
+    }
+  }
+  .animate-sos {
+    animation: sos-pulse 2s ease-out infinite;
+  }
+}
+
+/* ------------------------------------------------------------- leaflet fix */
+
+/**
+ * Leaflet ships its own stylesheet which assumes a white page. These overrides
+ * make the controls and popups follow the app's theme instead, and keep the
+ * tile layer from glaring in dark mode.
+ */
+.leaflet-container {
+  @apply bg-surface-200 font-sans dark:bg-surface-800;
+}
+
+.leaflet-control-zoom a,
+.leaflet-bar a {
+  @apply border-surface-200 bg-surface-0 text-surface-700;
+  @apply dark:border-surface-700 dark:bg-surface-900 dark:text-surface-200;
+}
+.leaflet-control-zoom a:hover,
+.leaflet-bar a:hover {
+  @apply bg-surface-100 dark:bg-surface-800;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  @apply bg-surface-0 text-surface-800 shadow-lg;
+  @apply dark:bg-surface-900 dark:text-surface-100;
+}
+.leaflet-popup-content-wrapper {
+  @apply rounded-xl;
+}
+.leaflet-popup-content {
+  @apply m-3 text-sm;
+}
+
+.leaflet-control-attribution {
+  @apply bg-surface-0/80 text-[10px] text-surface-500;
+  @apply dark:bg-surface-900/80 dark:text-surface-400;
+}
+.leaflet-control-attribution a {
+  @apply text-brand-600 dark:text-brand-400;
+}
+
+/*
+ * Dark mode map tiles: OpenStreetMap only publishes a light tile set, so the
+ * tiles are filtered rather than swapped. Inverting and re-hueing keeps labels
+ * readable while dropping the overall brightness.
+ */
+.dark .leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.88) saturate(0.7);
+}

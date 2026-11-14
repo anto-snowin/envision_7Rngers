@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" class="h-full">
+  <head>
+    <meta charset="UTF-8" />
+    <!--
+      `viewport-fit=cover` plus the safe-area padding in index.css keeps the
+      patient portal's SOS button clear of the iPhone home indicator.
+      Zooming is deliberately left enabled for accessibility.
+    -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f766e" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#042f2e" media="(prefers-color-scheme: dark)" />
+    <meta
+      name="description"
+      content="Dementia Care Monitoring and Intelligent Geofencing System — live location tracking, safe zones and instant alerts for caregivers."
+    />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Dementia Care Monitor</title>
+    <script>
+      /**
+       * Apply the saved theme before the first paint.
+       *
+       * Without this inline script the page renders in light mode and then
+       * flips to dark once React mounts, which is a jarring white flash for a
+       * caretaker checking alerts at 3 a.m.
+       */
+      (function () {
+        try {
+          var stored = localStorage.getItem('dcms.theme');
+          var prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (stored === 'dark' || (stored !== 'light' && prefersDark)) {
+            document.documentElement.classList.add('dark');
+          }
+        } catch (e) {
+          /* storage blocked — fall back to the light theme */
+        }
+      })();
+    </script>
+  </head>
+  <body class="h-full">
+    <div id="root" class="h-full"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
