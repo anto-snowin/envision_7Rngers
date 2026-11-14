@@ -172,9 +172,7 @@ export default function PatientPortal() {
   useEffect(() => {
     if (!isOnline || phase !== PHASE.TRACKING) return;
 
-    locationApi
-      .reportDeviceEvent({ trackingCode, type: 'INTERNET_RESTORED' })
-      .catch(() => {});
+    locationApi.reportDeviceEvent({ trackingCode, type: 'INTERNET_RESTORED' }).catch(() => {});
     flushQueue();
   }, [isOnline, phase, trackingCode, flushQueue]);
 
@@ -335,9 +333,7 @@ export default function PatientPortal() {
     clearInterval(uploadTimerRef.current);
     setPhase(PHASE.STOPPED);
 
-    await locationApi
-      .reportDeviceEvent({ trackingCode, type: 'TRACKING_STOPPED' })
-      .catch(() => {});
+    await locationApi.reportDeviceEvent({ trackingCode, type: 'TRACKING_STOPPED' }).catch(() => {});
   };
 
   // Warn before closing the tab while tracking — a patient closing it by
@@ -377,8 +373,8 @@ export default function PatientPortal() {
             This tracking link is not valid
           </h1>
           <p className="max-w-xs text-sm text-surface-500 dark:text-surface-400">
-            It may have been replaced with a newer one. Please ask your caregiver for an
-            up-to-date link.
+            It may have been replaced with a newer one. Please ask your caregiver for an up-to-date
+            link.
           </p>
         </div>
       </PortalShell>
@@ -399,7 +395,6 @@ export default function PatientPortal() {
         />
       ) : (
         <TrackingScreen
-          name={patientName}
           phase={phase}
           geo={geo}
           isOnline={isOnline}
@@ -449,19 +444,16 @@ function StartScreen({ name, onStart, loadError, gpsSupported, permission }) {
           <ShieldIcon className="h-10 w-10 text-brand-700 dark:text-brand-300" />
         </div>
 
-        <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-50">
-          Hello {name}
-        </h1>
+        <h1 className="text-2xl font-bold text-surface-900 dark:text-surface-50">Hello {name}</h1>
         <p className="mt-2 text-sm leading-relaxed text-surface-600 dark:text-surface-300">
-          This page lets the person caring for you know where you are, so they can help if you
-          need it. Tap the button below to begin.
+          This page lets the person caring for you know where you are, so they can help if you need
+          it. Tap the button below to begin.
         </p>
       </div>
 
       {!gpsSupported ? (
         <div className="mt-6 rounded-xl bg-rose-50 p-4 text-sm text-rose-800 dark:bg-rose-950/50 dark:text-rose-200">
-          This browser cannot share your location. Please try opening this link in Chrome or
-          Safari.
+          This browser cannot share your location. Please try opening this link in Chrome or Safari.
         </div>
       ) : null}
 
@@ -517,7 +509,6 @@ function StartScreen({ name, onStart, loadError, gpsSupported, permission }) {
 
 /** Live tracking screen. */
 function TrackingScreen({
-  name,
   phase,
   geo,
   isOnline,
@@ -538,7 +529,11 @@ function TrackingScreen({
   // Zone banner wording, driven by the server's verdict.
   const zoneBanner = (() => {
     if (isStopped) {
-      return { tone: 'neutral', title: 'Sharing paused', body: 'Your caregiver is not receiving updates.' };
+      return {
+        tone: 'neutral',
+        title: 'Sharing paused',
+        body: 'Your caregiver is not receiving updates.',
+      };
     }
     if (geo.status === GPS_STATUS.DENIED) {
       return {
@@ -642,9 +637,7 @@ function TrackingScreen({
           label="Internet"
           value={isOnline ? 'Connected' : 'Offline'}
           tone={isOnline ? 'good' : 'warning'}
-          icon={
-            isOnline ? <WifiIcon className="h-4 w-4" /> : <WifiOffIcon className="h-4 w-4" />
-          }
+          icon={isOnline ? <WifiIcon className="h-4 w-4" /> : <WifiOffIcon className="h-4 w-4" />}
         />
         <StatusTile
           label="Battery"
@@ -697,10 +690,7 @@ function TrackingScreen({
           <Detail label="Latitude" value={formatCoordinate(position?.latitude)} />
           <Detail label="Longitude" value={formatCoordinate(position?.longitude)} />
           <Detail label="Accuracy" value={formatAccuracy(position?.accuracy)} />
-          <Detail
-            label="Fixes received"
-            value={geo.fixCount ? String(geo.fixCount) : '—'}
-          />
+          <Detail label="Fixes received" value={geo.fixCount ? String(geo.fixCount) : '—'} />
           <Detail label="Last sent" value={formatTimeWithSeconds(lastUploadAt)} />
           <Detail
             label="Screen lock"

@@ -38,9 +38,7 @@ export function CardHeader({ title, subtitle, action = null, as: Heading = 'h2',
 /** A divider-separated section inside a card. */
 export function CardSection({ children, className = '' }) {
   return (
-    <div
-      className={`border-t border-surface-200 pt-4 dark:border-surface-800 ${className}`}
-    >
+    <div className={`border-t border-surface-200 pt-4 dark:border-surface-800 ${className}`}>
       {children}
     </div>
   );

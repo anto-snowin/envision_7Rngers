@@ -4,7 +4,15 @@
  */
 import { useEffect, useState } from 'react';
 import { useTheme } from '../../context/ThemeContext';
-import { SearchIcon, CloseIcon, SunIcon, MoonIcon, MonitorIcon, CopyIcon, CheckIcon } from './Icons';
+import {
+  SearchIcon,
+  CloseIcon,
+  SunIcon,
+  MoonIcon,
+  MonitorIcon,
+  CopyIcon,
+  CheckIcon,
+} from './Icons';
 
 /**
  * Search input with a clear button.

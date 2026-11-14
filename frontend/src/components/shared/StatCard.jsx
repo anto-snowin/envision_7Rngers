@@ -68,9 +68,7 @@ export default function StatCard({
         <p className={`mt-1.5 text-3xl font-bold ${valueClass}`}>{value}</p>
       )}
 
-      {hint ? (
-        <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">{hint}</p>
-      ) : null}
+      {hint ? <p className="mt-1 text-xs text-surface-500 dark:text-surface-400">{hint}</p> : null}
     </>
   );
 

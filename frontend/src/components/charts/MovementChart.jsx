@@ -5,15 +5,7 @@
  * to a zero baseline make that comparison honest in a way a line between
  * daily points would not.
  */
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useTheme } from '../../context/ThemeContext';
 import { chartTokens, MARK } from '../../lib/chartTheme';
 import { ChartFrame, ChartTooltip } from './ChartKit';
@@ -38,11 +30,7 @@ export default function MovementChart({ data = [], isLoading = false, action = n
       <ResponsiveContainer width="100%" height="100%">
         <BarChart data={data} margin={{ top: 8, right: 8, left: -18, bottom: 0 }}>
           {/* Horizontal rules only: vertical ones add nothing on a time axis. */}
-          <CartesianGrid
-            stroke={tokens.grid}
-            strokeDasharray={MARK.gridDash}
-            vertical={false}
-          />
+          <CartesianGrid stroke={tokens.grid} strokeDasharray={MARK.gridDash} vertical={false} />
           <XAxis
             dataKey="label"
             stroke={tokens.axis}

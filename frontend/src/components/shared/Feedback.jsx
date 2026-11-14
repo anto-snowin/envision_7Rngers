@@ -11,7 +11,9 @@ import { ChevronLeftIcon, ChevronRightIcon, RefreshIcon } from './Icons';
  */
 export function EmptyState({ icon = null, title, message = null, action = null, className = '' }) {
   return (
-    <div className={`flex flex-col items-center justify-center px-6 py-14 text-center ${className}`}>
+    <div
+      className={`flex flex-col items-center justify-center px-6 py-14 text-center ${className}`}
+    >
       {icon ? (
         <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-surface-100 text-surface-400 dark:bg-surface-800 dark:text-surface-500">
           {icon}
@@ -37,7 +39,9 @@ export function ErrorState({ error, onRetry = null, className = '' }) {
   const isNetwork = error?.isNetworkError;
 
   return (
-    <div className={`flex flex-col items-center justify-center px-6 py-14 text-center ${className}`}>
+    <div
+      className={`flex flex-col items-center justify-center px-6 py-14 text-center ${className}`}
+    >
       <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-rose-50 text-2xl text-severity-critical dark:bg-rose-950/60">
         {isNetwork ? '🌐' : '!'}
       </div>

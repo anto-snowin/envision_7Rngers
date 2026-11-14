@@ -33,8 +33,7 @@ const VARIANTS = {
     icon: '!',
   },
   critical: {
-    container:
-      'bg-rose-600 ring-rose-500 text-white dark:bg-rose-700 dark:ring-rose-600 shadow-xl',
+    container: 'bg-rose-600 ring-rose-500 text-white dark:bg-rose-700 dark:ring-rose-600 shadow-xl',
     accent: 'bg-white/70',
     icon: '!',
   },

@@ -98,9 +98,7 @@ export default function DashboardLayout() {
             <NavLink
               key={item.to}
               to={item.to}
-              className={({ isActive }) =>
-                `nav-link ${isActive ? 'nav-link-active' : ''}`
-              }
+              className={({ isActive }) => `nav-link ${isActive ? 'nav-link-active' : ''}`}
             >
               <Icon className="h-4.5 w-4.5 shrink-0" />
               <span className="flex-1 truncate">{item.label}</span>
@@ -181,11 +179,7 @@ export default function DashboardLayout() {
       {/* Main column */}
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex h-16 shrink-0 items-center gap-3 border-b border-surface-200 bg-surface-0/80 px-4 backdrop-blur-sm dark:border-surface-800 dark:bg-surface-900/80">
-          <IconButton
-            label="Open menu"
-            onClick={() => setIsDrawerOpen(true)}
-            className="lg:hidden"
-          >
+          <IconButton label="Open menu" onClick={() => setIsDrawerOpen(true)} className="lg:hidden">
             <MenuIcon className="h-5 w-5" />
           </IconButton>
 
@@ -214,8 +208,7 @@ function CurrentPageTitle() {
   const location = useLocation();
 
   const match = NAV_ITEMS.find(
-    (item) =>
-      location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
+    (item) => location.pathname === item.to || location.pathname.startsWith(`${item.to}/`)
   );
 
   const title = match?.label || 'Dashboard';

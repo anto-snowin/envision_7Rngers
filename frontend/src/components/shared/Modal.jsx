@@ -31,35 +31,50 @@ export default function Modal({
   const panelRef = useRef(null);
   const previouslyFocused = useRef(null);
 
-  /** Keep focus inside the dialog while it is open. */
-  const handleKeyDown = useCallback(
-    (event) => {
-      if (event.key === 'Escape') {
-        event.stopPropagation();
-        onClose();
-        return;
-      }
+  /**
+   * Keep focus inside the dialog while it is open.
+   *
+   * Only Tab is handled here. Escape is bound to the document instead (below):
+   * this handler sits on the dialog wrapper, so it never fires when focus has
+   * landed outside the panel — on `body` after a click on a non-focusable
+   * element, for instance — and Escape would silently stop working.
+   */
+  const handleKeyDown = useCallback((event) => {
+    if (event.key !== 'Tab' || !panelRef.current) return;
 
-      if (event.key !== 'Tab' || !panelRef.current) return;
+    const focusable = panelRef.current.querySelectorAll(
+      'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    );
+    if (!focusable.length) return;
 
-      const focusable = panelRef.current.querySelectorAll(
-        'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-      );
-      if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
 
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }, []);
 
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    },
-    [onClose]
-  );
+  /**
+   * Escape closes the dialog, bound at the document level so it works no
+   * matter where focus currently is.
+   */
+  useEffect(() => {
+    if (!isOpen) return undefined;
+
+    const handleEscape = (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      onClose();
+    };
+
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;

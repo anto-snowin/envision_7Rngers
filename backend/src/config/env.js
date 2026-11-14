@@ -58,7 +58,21 @@ const env = {
   ALERT_COOLDOWN_MS: Number(process.env.ALERT_COOLDOWN_MS || 120000),
 
   RATE_LIMIT_WINDOW_MS: Number(process.env.RATE_LIMIT_WINDOW_MS || 15 * 60 * 1000),
-  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 1000),
+
+  /**
+   * General API budget per window, per IP.
+   *
+   * Sized against real dashboard traffic rather than a round number. A patient
+   * phone posts a fix every 5 seconds, and each fix fans out to the caretaker's
+   * open dashboard, so a caretaker watching 10 patients legitimately drives a
+   * few thousand requests an hour before any human interaction at all. 5,000
+   * per 15 minutes leaves comfortable headroom while still stopping abuse.
+   *
+   * Note that patient location ingest has its own, separate limiter keyed by
+   * tracking code, so raising this does not widen the ingest path.
+   */
+  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 5000),
+
   AUTH_RATE_LIMIT_MAX: Number(process.env.AUTH_RATE_LIMIT_MAX || 20),
 
   TRUST_PROXY: process.env.TRUST_PROXY || (isProduction ? '1' : 'loopback'),

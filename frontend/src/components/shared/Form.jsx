@@ -70,12 +70,7 @@ export function Input({
         ) : null}
         <input
           id={id}
-          className={[
-            'input',
-            leftIcon ? 'pl-10' : '',
-            error ? 'input-error' : '',
-            inputClassName,
-          ]
+          className={['input', leftIcon ? 'pl-10' : '', error ? 'input-error' : '', inputClassName]
             .filter(Boolean)
             .join(' ')}
           aria-invalid={error ? 'true' : undefined}

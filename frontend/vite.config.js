@@ -29,12 +29,25 @@ export default defineConfig({
          * Split the heavy, rarely-changing libraries into their own chunks.
          * Leaflet and Recharts together are larger than the whole app, and the
          * patient portal (which most users load on mobile data) needs neither
-         * charts nor the router's dashboard routes.
+         * charts nor the dashboard routes.
+         *
+         * Vite 8 bundles with Rolldown, which requires the function form of
+         * `manualChunks` — the object form is rejected at config time.
          */
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-map': ['leaflet', 'react-leaflet'],
-          'vendor-charts': ['recharts'],
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return undefined;
+
+          if (/[\\/]node_modules[\\/](react|react-dom|react-router|react-router-dom|scheduler)[\\/]/.test(id)) {
+            return 'vendor-react';
+          }
+          if (/[\\/]node_modules[\\/](leaflet|react-leaflet|@react-leaflet)[\\/]/.test(id)) {
+            return 'vendor-map';
+          }
+          if (/[\\/]node_modules[\\/](recharts|d3-.*|victory-vendor|internmap)[\\/]/.test(id)) {
+            return 'vendor-charts';
+          }
+
+          return undefined;
         },
       },
     },

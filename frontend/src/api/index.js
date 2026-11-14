@@ -48,7 +48,8 @@ export const patientsApi = {
 export const locationApi = {
   /** Caretaker reads */
   latest: (patientId) => apiClient.get(`/location/${patientId}`),
-  trail: (patientId, limit = 50) => apiClient.get(`/location/trail/${patientId}`, { params: { limit } }),
+  trail: (patientId, limit = 50) =>
+    apiClient.get(`/location/trail/${patientId}`, { params: { limit } }),
   history: (patientId, params) =>
     apiClient.get(`/location/history/${patientId}`, { params: cleanParams(params) }),
 

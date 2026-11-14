@@ -19,7 +19,6 @@ export default class ErrorBoundary extends Component {
 
   componentDidCatch(error, info) {
     // In a real deployment this is where an error reporter would be called.
-    // eslint-disable-next-line no-console
     console.error('Unhandled render error:', error, info?.componentStack);
   }
 

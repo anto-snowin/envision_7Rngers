@@ -74,8 +74,7 @@ export default function AuthLayout({ title, subtitle, children, footer = null })
             Keep the people you care for safe, without taking away their independence.
           </h2>
           <p className="mt-4 max-w-md text-sm text-brand-100">
-            A web-based monitoring system for caregivers looking after elderly people with
-            dementia.
+            A web-based monitoring system for caregivers looking after elderly people with dementia.
           </p>
 
           <ul className="mt-10 space-y-6">

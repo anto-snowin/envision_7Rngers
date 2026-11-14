@@ -126,6 +126,63 @@ export function useDebounced(value, delay = 350) {
 }
 
 /**
+ * Throttle a callback so it runs at most once per `delay`.
+ *
+ * This matters a great deal for the socket-driven pages. A patient's phone
+ * posts a fix every 5 seconds, and each fix emits a `location:update`. Calling
+ * a refetch directly from that handler means one caretaker watching three
+ * patients generates 72 requests a minute — over a thousand per 15 minutes,
+ * which trips the API's own rate limiter while the dashboard just sits there.
+ *
+ * The socket payload already carries the new position, so the only reason to
+ * refetch at all is to refresh derived figures (daily distance, counters).
+ * Those do not need five-second accuracy, so they are throttled instead.
+ *
+ * The trailing call is preserved: if events arrive during the cooldown, one
+ * final invocation runs when it ends, so the UI never settles on stale data.
+ */
+export function useThrottledCallback(callback, delay = 10000) {
+  const callbackRef = useRef(callback);
+  const lastRunRef = useRef(0);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    callbackRef.current = callback;
+  }, [callback]);
+
+  // Drop any pending trailing call when the component goes away.
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    []
+  );
+
+  return useCallback(
+    (...args) => {
+      const now = Date.now();
+      const elapsed = now - lastRunRef.current;
+
+      if (elapsed >= delay) {
+        lastRunRef.current = now;
+        callbackRef.current?.(...args);
+        return;
+      }
+
+      // Already scheduled — the pending call will cover this event too.
+      if (timerRef.current) return;
+
+      timerRef.current = setTimeout(() => {
+        timerRef.current = null;
+        lastRunRef.current = Date.now();
+        callbackRef.current?.(...args);
+      }, delay - elapsed);
+    },
+    [delay]
+  );
+}
+
+/**
  * A value that updates on an interval — used to re-render relative timestamps
  * ("3 min ago") without refetching anything.
  */

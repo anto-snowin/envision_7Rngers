@@ -6,15 +6,7 @@
  * blend into one another, and the legend plus the table view in `ChartFrame`
  * mean the breakdown is never readable by colour alone.
  */
-import {
-  Bar,
-  BarChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { useTheme } from '../../context/ThemeContext';
 import { chartTokens, MARK } from '../../lib/chartTheme';
 import { ChartFrame, ChartTooltip } from './ChartKit';
