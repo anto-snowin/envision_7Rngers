@@ -1,0 +1,112 @@
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+# Never commit installed packages: they are reproducible from the lockfiles,
+# add tens of thousands of files to every clone, and contain
+# platform-specific binaries that break on other machines.
+node_modules/
+.pnp
+.pnp.js
+jspm_packages/
+
+# ---------------------------------------------------------------------------
+# Environment variables and secrets
+# ---------------------------------------------------------------------------
+# `.env.example` IS committed (it documents the required variables);
+# every file holding real values is not.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+secrets.json
+
+# ---------------------------------------------------------------------------
+# Build output
+# ---------------------------------------------------------------------------
+dist/
+dist-ssr/
+build/
+out/
+.vite/
+*.local
+
+# ---------------------------------------------------------------------------
+# Logs and diagnostics
+# ---------------------------------------------------------------------------
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# ---------------------------------------------------------------------------
+# Testing and coverage
+# ---------------------------------------------------------------------------
+coverage/
+*.lcov
+.nyc_output/
+.vitest-cache/
+
+# ---------------------------------------------------------------------------
+# Caches
+# ---------------------------------------------------------------------------
+.cache/
+.parcel-cache/
+.eslintcache
+.stylelintcache
+.npm/
+.rollup.cache/
+*.tsbuildinfo
+
+# ---------------------------------------------------------------------------
+# Local database files
+# ---------------------------------------------------------------------------
+# A local mongod data directory must never be committed.
+mongo-data/
+data/db/
+*.mongodb
+
+# ---------------------------------------------------------------------------
+# Editors and IDEs
+# ---------------------------------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+.idea/
+*.swp
+*.swo
+*.sublime-workspace
+*.sublime-project
+
+# ---------------------------------------------------------------------------
+# Operating system artefacts
+# ---------------------------------------------------------------------------
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ---------------------------------------------------------------------------
+# Deployment platform metadata
+# ---------------------------------------------------------------------------
+.vercel
+.render/
+.netlify
+
+# ---------------------------------------------------------------------------
+# Temporary and scratch files
+# ---------------------------------------------------------------------------
+tmp/
+temp/
+*.tmp
+*.bak
+*.orig
