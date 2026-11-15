@@ -1,0 +1,389 @@
+@import 'tailwindcss';
+@import 'leaflet/dist/leaflet.css';
+
+/* ===========================================================================
+   Design tokens
+   ---------------------------------------------------------------------------
+   The platform is dark-only by design, not by omission. Caretakers check it at
+   night and patients hold it outdoors, so the palette is built around a single
+   near-black ground with one high-energy accent. "ink" is the neutral ramp,
+   "acid" the lime accent, and the three signal colours map to alert severity.
+   =========================================================================== */
+@theme {
+  --font-display: var(--font-figtree), ui-sans-serif, system-ui, sans-serif;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-mono), ui-monospace, 'SFMono-Regular', monospace;
+
+  --color-ink-950: #080908;
+  --color-ink-900: #0d0f0c;
+  --color-ink-850: #121512;
+  --color-ink-800: #181b17;
+  --color-ink-700: #22261f;
+  --color-ink-600: #343a30;
+  --color-ink-500: #5a6153;
+  --color-ink-400: #9aa390;
+  --color-ink-300: #c2c9bb;
+  --color-ink-200: #dfe4da;
+  --color-ink-100: #f1f4ef;
+
+  --color-acid-300: #e6ff96;
+  --color-acid-400: #d9ff5c;
+  --color-acid-500: #cbff3c;
+  --color-acid-600: #a8dc18;
+  --color-acid-700: #7fa80f;
+
+  --color-alarm-300: #ffb5a0;
+  --color-alarm-400: #ff8566;
+  --color-alarm-500: #ff5c38;
+  --color-alarm-600: #e23c18;
+
+  --color-caution-400: #ffc95c;
+  --color-caution-500: #ffb020;
+
+  --color-safe-400: #71eaab;
+  --color-safe-500: #3de08c;
+
+  --color-info-400: #8fd0ff;
+  --color-info-500: #5bb8ff;
+
+  --radius-pill: 999px;
+
+  --shadow-lift: 0 18px 50px -22px rgb(0 0 0 / 0.9);
+  --shadow-acid: 0 0 0 1px rgb(203 255 60 / 0.35), 0 12px 40px -16px rgb(203 255 60 / 0.35);
+
+  --animate-pulse-ring: pulse-ring 2.4s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-sos: sos 1.6s ease-in-out infinite;
+  --animate-rise: rise 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.85);
+    opacity: 0.8;
+  }
+  70%,
+  100% {
+    transform: scale(2.2);
+    opacity: 0;
+  }
+}
+
+@keyframes sos {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(255 92 56 / 0.55);
+  }
+  50% {
+    box-shadow: 0 0 0 16px rgb(255 92 56 / 0);
+  }
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ===========================================================================
+   Base
+   =========================================================================== */
+@layer base {
+  * {
+    border-color: --alpha(var(--color-ink-100) / 10%);
+  }
+
+  html {
+    scroll-behavior: smooth;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    background-color: var(--color-ink-950);
+    color: var(--color-ink-200);
+    font-family: var(--font-sans);
+    font-feature-settings: 'cv11', 'ss01';
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Editorial display type: tight tracking, heavy weight, no orphan air. */
+  h1,
+  h2,
+  h3 {
+    font-family: var(--font-display);
+    color: var(--color-ink-100);
+    letter-spacing: -0.03em;
+    line-height: 1.02;
+    text-wrap: balance;
+  }
+
+  ::selection {
+    background-color: var(--color-acid-500);
+    color: var(--color-ink-950);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--color-acid-500);
+    outline-offset: 2px;
+  }
+
+  /* Telemetry — coordinates, accuracy, timestamps — always tabular. */
+  .tnum {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* ===========================================================================
+   Components
+   =========================================================================== */
+/*
+   Variants are composed in markup — `className="btn btn-acid"` — rather than by
+   `@apply`-ing a base class. Tailwind v4 resolves `@apply` against generated
+   utilities only, so applying one `@layer components` class inside another
+   silently fails to build.
+ */
+@layer components {
+  /* --- Surfaces ---------------------------------------------------------- */
+  .panel {
+    @apply rounded-3xl border border-ink-100/10 bg-ink-900/80 backdrop-blur-xl;
+  }
+
+  .panel-flat {
+    @apply rounded-3xl border border-ink-100/10 bg-ink-900;
+  }
+
+  /* A single hairline-lit edge reads as light falling on glass. */
+  .panel-lit {
+    @apply relative overflow-hidden;
+  }
+
+  .panel-lit::before {
+    content: '';
+    @apply pointer-events-none absolute inset-x-6 top-0 h-px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      --alpha(var(--color-acid-500) / 60%),
+      transparent
+    );
+  }
+
+  .hairline {
+    @apply border-t border-ink-100/10;
+  }
+
+  /* --- Buttons ---------------------------------------------------------- */
+  .btn {
+    @apply inline-flex shrink-0 items-center justify-center gap-2 rounded-pill
+      px-5 py-2.5 text-sm font-semibold whitespace-nowrap
+      transition-all duration-150 select-none
+      disabled:pointer-events-none disabled:opacity-45;
+  }
+
+  .btn-acid {
+    @apply bg-acid-500 text-ink-950 hover:bg-acid-400 active:scale-[0.98];
+  }
+
+  .btn-ghost {
+    @apply border border-ink-100/15 bg-ink-100/5 text-ink-100
+      hover:border-ink-100/30 hover:bg-ink-100/10 active:scale-[0.98];
+  }
+
+  .btn-quiet {
+    @apply text-ink-400 hover:bg-ink-100/5 hover:text-ink-100;
+  }
+
+  .btn-alarm {
+    @apply bg-alarm-500 text-ink-950 hover:bg-alarm-400 active:scale-[0.98];
+  }
+
+  .btn-lg {
+    @apply px-7 py-3.5 text-base;
+  }
+
+  .btn-sm {
+    @apply px-3.5 py-1.5 text-xs;
+  }
+
+  /* --- Pill navigation -------------------------------------------------- */
+  .pillbar {
+    @apply inline-flex items-center gap-1 rounded-pill border border-ink-100/10
+      bg-ink-900/70 p-1 backdrop-blur-xl;
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-2 rounded-pill px-4 py-2 text-sm font-medium
+      text-ink-400 transition-colors hover:text-ink-100;
+  }
+
+  .pill-active {
+    @apply bg-acid-500 text-ink-950 hover:text-ink-950;
+  }
+
+  /* --- Forms ------------------------------------------------------------ */
+  .field {
+    @apply w-full rounded-2xl border border-ink-100/12 bg-ink-850 px-4 py-3
+      text-[15px] text-ink-100 transition-colors
+      placeholder:text-ink-500
+      focus:border-acid-500/60 focus:outline-none
+      disabled:opacity-50;
+  }
+
+  .field-invalid {
+    @apply border-alarm-500/70;
+  }
+
+  .label {
+    @apply mb-1.5 block text-xs font-semibold tracking-[0.1em] text-ink-400 uppercase;
+  }
+
+  /* --- Badges ----------------------------------------------------------- */
+  .badge {
+    @apply inline-flex items-center gap-1.5 rounded-pill px-2.5 py-1
+      text-[11px] font-semibold tracking-wide uppercase;
+  }
+
+  .badge-acid {
+    @apply bg-acid-500/15 text-acid-400;
+  }
+
+  .badge-safe {
+    @apply bg-safe-500/15 text-safe-400;
+  }
+
+  .badge-caution {
+    @apply bg-caution-500/15 text-caution-400;
+  }
+
+  .badge-alarm {
+    @apply bg-alarm-500/15 text-alarm-300;
+  }
+
+  .badge-mute {
+    @apply bg-ink-100/8 text-ink-400;
+  }
+
+  /* --- Misc ------------------------------------------------------------- */
+  .eyebrow {
+    @apply text-[11px] font-semibold tracking-[0.22em] text-acid-500 uppercase;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded-xl bg-ink-100/8;
+  }
+
+  .scroll-thin {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-ink-600) transparent;
+  }
+}
+
+/* ===========================================================================
+   Leaflet
+   ---------------------------------------------------------------------------
+   OpenStreetMap only ships light raster tiles, so they are inverted and
+   hue-rotated back to a dark basemap. Saturation is pulled down hard: the lime
+   accent has to stay the single brightest thing on screen.
+   =========================================================================== */
+.leaflet-container {
+  background: var(--color-ink-900);
+  font-family: var(--font-sans);
+  z-index: 0;
+}
+
+.leaflet-tile-pane {
+  filter: invert(1) hue-rotate(180deg) brightness(0.92) contrast(0.95) saturate(0.45);
+}
+
+.leaflet-control-zoom a,
+.leaflet-bar a {
+  background: var(--color-ink-850) !important;
+  border-color: --alpha(var(--color-ink-100) / 12%) !important;
+  color: var(--color-ink-200) !important;
+}
+
+.leaflet-control-zoom a:hover,
+.leaflet-bar a:hover {
+  background: var(--color-ink-800) !important;
+  color: var(--color-acid-500) !important;
+}
+
+.leaflet-control-attribution {
+  background: --alpha(var(--color-ink-950) / 75%) !important;
+  color: var(--color-ink-500) !important;
+  font-size: 10px !important;
+}
+
+.leaflet-control-attribution a {
+  color: var(--color-ink-400) !important;
+}
+
+.leaflet-popup-content-wrapper,
+.leaflet-popup-tip {
+  background: var(--color-ink-850) !important;
+  color: var(--color-ink-200) !important;
+  border: 1px solid --alpha(var(--color-ink-100) / 12%);
+  border-radius: 16px !important;
+  box-shadow: var(--shadow-lift) !important;
+}
+
+.leaflet-popup-close-button {
+  color: var(--color-ink-400) !important;
+}
+
+/* Patient marker: a lime dot with a radiating ring, so a moving patient is
+   findable on a busy map without reading any labels. */
+.marker-patient {
+  background: transparent;
+  border: 0;
+}
+
+.marker-patient__dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--color-acid-500);
+  border: 3px solid var(--color-ink-950);
+  box-shadow: 0 0 0 1px --alpha(var(--color-acid-500) / 50%);
+}
+
+.marker-patient__ring {
+  position: absolute;
+  inset: -1px;
+  border-radius: 999px;
+  background: --alpha(var(--color-acid-500) / 45%);
+  animation: var(--animate-pulse-ring);
+}
+
+.marker-patient--stale .marker-patient__dot {
+  background: var(--color-ink-500);
+}
+
+.marker-patient--stale .marker-patient__ring {
+  display: none;
+}
+
+.marker-patient--alarm .marker-patient__dot {
+  background: var(--color-alarm-500);
+}
+
+.marker-patient--alarm .marker-patient__ring {
+  background: --alpha(var(--color-alarm-500) / 45%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
