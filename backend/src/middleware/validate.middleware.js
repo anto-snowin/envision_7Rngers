@@ -34,7 +34,17 @@ function validate(schemas) {
       const schema = schemas[segment];
       if (!schema) continue;
 
-      const result = schema.safeParse(req[segment]);
+      /**
+       * Express 5 leaves `req.body` as undefined when the request carries no
+       * body at all, where Express 4 left an empty object. An object schema
+       * rejects undefined, so without this every route with an entirely
+       * optional body — `PUT /alerts/:id/resolved`, for instance — would answer
+       * 400 to a perfectly valid bodyless request. "No body" and "{}" mean the
+       * same thing to a validator.
+       */
+      const input = segment === 'body' && req.body === undefined ? {} : req[segment];
+
+      const result = schema.safeParse(input);
       if (!result.success) {
         return next(
           ApiError.badRequest('Validation failed', {

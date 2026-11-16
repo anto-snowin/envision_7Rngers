@@ -90,13 +90,26 @@ function buildUrl(path: string, query?: Query) {
   return url.toString();
 }
 
-/** Pull `{ field: message }` out of whatever shape the error body has. */
+/**
+ * Error body shape produced by the API's error middleware:
+ * `{ success: false, error: { message, status, details?: { fields } } }`
+ */
+interface ErrorBody {
+  error?: {
+    message?: string;
+    status?: number;
+    details?: { segment?: string; fields?: Record<string, string> };
+  };
+  message?: string;
+}
+
+/** Pull `{ field: message }` out of the validator's `details.fields`. */
 function extractFields(payload: unknown): Record<string, string> {
-  if (!payload || typeof payload !== 'object') return {};
-  const errors = (payload as { errors?: unknown }).errors;
-  if (!errors || typeof errors !== 'object') return {};
+  const fields = (payload as ErrorBody | null)?.error?.details?.fields;
+  if (!fields || typeof fields !== 'object') return {};
+
   const out: Record<string, string> = {};
-  for (const [key, value] of Object.entries(errors as Record<string, unknown>)) {
+  for (const [key, value] of Object.entries(fields)) {
     if (typeof value === 'string') out[key] = value;
   }
   return out;
@@ -144,8 +157,9 @@ export async function request<T>(
   }
 
   if (!response.ok) {
+    const body = payload as ErrorBody | null;
     const message =
-      (payload as { message?: string })?.message || `Request failed (${response.status})`;
+      body?.error?.message || body?.message || `Request failed (${response.status})`;
     throw new ApiError(message, response.status, extractFields(payload));
   }
 

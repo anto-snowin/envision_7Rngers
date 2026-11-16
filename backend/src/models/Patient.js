@@ -53,21 +53,22 @@ const patientSchema = new mongoose.Schema(
     /**
      * Optional alternative login identifiers.
      *
-     * `sparse` matters here: without it a second patient with no email would
-     * collide with the first on a null value and the insert would fail.
+     * Uniqueness is enforced by partial indexes declared below rather than by
+     * `unique: true` here. A plain unique index would reject the second patient
+     * who has no email, and a *sparse* index does not help either: sparse skips
+     * documents where the field is absent, but these default to null, so the
+     * field is present and two nulls still collide.
      */
     email: {
       type: String,
       lowercase: true,
       trim: true,
       default: null,
-      index: { unique: true, sparse: true },
     },
     phone: {
       type: String,
       trim: true,
       default: null,
-      index: { unique: true, sparse: true },
     },
 
     password: {
@@ -140,6 +141,20 @@ const patientSchema = new mongoose.Schema(
 patientSchema.index({ caretaker: 1, createdAt: -1 });
 // Supports the patient search box.
 patientSchema.index({ caretaker: 1, name: 1 });
+
+/**
+ * Unique only among patients that actually have the field set. `$type: 'string'`
+ * excludes both null and missing, so any number of patients may have no email
+ * while two patients can never share one.
+ */
+patientSchema.index(
+  { email: 1 },
+  { unique: true, partialFilterExpression: { email: { $type: 'string' } } }
+);
+patientSchema.index(
+  { phone: 1 },
+  { unique: true, partialFilterExpression: { phone: { $type: 'string' } } }
+);
 
 patientSchema.pre('save', async function hashPassword() {
   if (!this.isModified('password')) return;

@@ -57,6 +57,7 @@ export const ALERT_TYPES = {
   INTERNET_DISCONNECTED: 'INTERNET_DISCONNECTED',
   INTERNET_RESTORED: 'INTERNET_RESTORED',
   PATIENT_OFFLINE: 'PATIENT_OFFLINE',
+  TRACKING_STARTED: 'TRACKING_STARTED',
   TRACKING_STOPPED: 'TRACKING_STOPPED',
 } as const;
 
@@ -71,17 +72,30 @@ export const ALERT_LABELS: Record<string, string> = {
   INTERNET_DISCONNECTED: 'Device offline',
   INTERNET_RESTORED: 'Device back online',
   PATIENT_OFFLINE: 'No contact from device',
+  TRACKING_STARTED: 'Tracking started',
   TRACKING_STOPPED: 'Tracking stopped',
 };
 
+/** Mirrors `backend/src/utils/constants.js`; both sides must agree exactly. */
 export const SOCKET_EVENTS = {
+  // client -> server
+  PATIENT_HEARTBEAT: 'patient:heartbeat',
+  SUBSCRIBE_PATIENT: 'patient:subscribe',
+  UNSUBSCRIBE_PATIENT: 'patient:unsubscribe',
+  STATS_REQUEST: 'stats:request',
+
+  // server -> client
   LOCATION_UPDATE: 'location:update',
   ALERT_NEW: 'alert:new',
-  ALERT_UPDATE: 'alert:update',
+  ALERT_UPDATED: 'alert:updated',
   PRESENCE_UPDATE: 'presence:update',
-  ZONES_UPDATE: 'zones:update',
-  HEARTBEAT: 'device:heartbeat',
+  STATS_UPDATE: 'stats:update',
+  PATIENT_CHANGED: 'patient:changed',
+  ZONES_CHANGED: 'zones:changed',
 } as const;
+
+/** Severity ranking, for sorting an alert feed by urgency. */
+export const SEVERITY_ORDER = ['critical', 'high', 'medium', 'low', 'info'] as const;
 
 /** OpenStreetMap raster tiles. Attribution is required by the ODbL licence. */
 export const TILE_URL = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
