@@ -47,10 +47,20 @@ const env = {
   // Comma separated list of allowed browser origins.
   CORS_ORIGINS: list(process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173'),
 
-  // Tracking / alerting behaviour.
-  LOCATION_INTERVAL_MS: Number(process.env.LOCATION_INTERVAL_MS || 5000),
-  OFFLINE_THRESHOLD_MS: Number(process.env.OFFLINE_THRESHOLD_MS || 30000),
-  PRESENCE_SWEEP_MS: Number(process.env.PRESENCE_SWEEP_MS || 15000),
+  /**
+   * Tracking cadence.
+   *
+   * The patient device uploads a fix every three minutes. The offline
+   * threshold is deliberately a little over two cycles: one missed upload is
+   * routine (a tunnel, a lift, a slow fix), so alerting on it would train the
+   * caretaker to ignore the alert. Two consecutive misses is a real signal.
+   *
+   * The sweep runs every minute, which bounds how late an offline alert can
+   * be rather than how soon it can fire.
+   */
+  LOCATION_INTERVAL_MS: Number(process.env.LOCATION_INTERVAL_MS || 3 * 60 * 1000),
+  OFFLINE_THRESHOLD_MS: Number(process.env.OFFLINE_THRESHOLD_MS || 7 * 60 * 1000),
+  PRESENCE_SWEEP_MS: Number(process.env.PRESENCE_SWEEP_MS || 60 * 1000),
   LOW_BATTERY_THRESHOLD: Number(process.env.LOW_BATTERY_THRESHOLD || 20),
   POOR_ACCURACY_THRESHOLD_M: Number(process.env.POOR_ACCURACY_THRESHOLD_M || 150),
 
@@ -62,16 +72,14 @@ const env = {
   /**
    * General API budget per window, per IP.
    *
-   * Sized against real dashboard traffic rather than a round number. A patient
-   * phone posts a fix every 5 seconds, and each fix fans out to the caretaker's
-   * open dashboard, so a caretaker watching 10 patients legitimately drives a
-   * few thousand requests an hour before any human interaction at all. 5,000
-   * per 15 minutes leaves comfortable headroom while still stopping abuse.
-   *
-   * Note that patient location ingest has its own, separate limiter keyed by
-   * tracking code, so raising this does not widen the ingest path.
+   * Sized against real traffic rather than a round number. Ingest itself is
+   * cheap at one fix per patient every three minutes, but several caretakers
+   * behind one NAT share an IP, and each dashboard refetches on socket events.
+   * 2,000 per 15 minutes leaves comfortable headroom while still stopping
+   * abuse. Location ingest has its own, tighter limiter keyed per patient, so
+   * this budget is not the only thing protecting the write path.
    */
-  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 5000),
+  RATE_LIMIT_MAX: Number(process.env.RATE_LIMIT_MAX || 2000),
 
   AUTH_RATE_LIMIT_MAX: Number(process.env.AUTH_RATE_LIMIT_MAX || 20),
 

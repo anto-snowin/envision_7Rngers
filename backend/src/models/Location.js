@@ -1,10 +1,11 @@
 /**
  * A single GPS fix reported by a patient's phone.
  *
- * This is by far the highest-volume collection (one document every ~5 seconds
- * per patient), so it stays deliberately flat and is indexed for exactly the
- * two access patterns the app has: "latest fix for a patient" and
- * "all fixes for a patient within a time range".
+ * This is the highest-volume collection in the system (one document every
+ * three minutes per active patient, plus any backlog replayed after a
+ * connectivity gap), so it stays deliberately flat and is indexed for exactly
+ * the two access patterns the app has: "latest fix for a patient" and "all
+ * fixes for a patient within a time range".
  */
 const mongoose = require('mongoose');
 const { ZONE_STATE } = require('../utils/constants');
@@ -17,12 +18,18 @@ const locationSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    // Denormalised so history/analytics queries never need a patient join.
+    // Denormalised so history queries never need a patient join to authorise.
     caretaker: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+      ref: 'Caretaker',
       required: true,
       index: true,
+    },
+    /** The tracking run this fix belongs to, when one is open. */
+    trackingSession: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'TrackingSession',
+      default: null,
     },
 
     latitude: {
@@ -55,7 +62,8 @@ const locationSchema = new mongoose.Schema(
       default: ZONE_STATE.UNKNOWN,
     },
     isInsideSafeZone: { type: Boolean, default: null },
-    distanceFromHome: { type: Number, default: null },
+    /** Metres from the nearest safe-zone centre, when one is configured. */
+    distanceFromSafeZone: { type: Number, default: null },
     dangerZones: [{ type: mongoose.Schema.Types.ObjectId, ref: 'DangerZone' }],
 
     /**
@@ -70,6 +78,7 @@ const locationSchema = new mongoose.Schema(
     receivedAt: { type: Date, default: Date.now },
   },
   {
+    collection: 'locations',
     timestamps: true,
     toJSON: {
       transform(_doc, ret) {
@@ -82,7 +91,30 @@ const locationSchema = new mongoose.Schema(
 
 // Primary access pattern: a patient's track over a time window, newest first.
 locationSchema.index({ patient: 1, recordedAt: -1 });
-// Analytics roll-ups across every patient of one caretaker.
+// Roll-ups across every patient of one caretaker.
 locationSchema.index({ caretaker: 1, recordedAt: -1 });
+
+/** Serialise a fix (document or lean object) for the API. */
+locationSchema.statics.toPublic = function toPublic(fix) {
+  if (!fix) return null;
+  return {
+    id: String(fix._id),
+    patientId: String(fix.patient),
+    latitude: fix.latitude,
+    longitude: fix.longitude,
+    accuracy: fix.accuracy ?? null,
+    altitude: fix.altitude ?? null,
+    speed: fix.speed ?? null,
+    heading: fix.heading ?? null,
+    batteryLevel: fix.batteryLevel ?? null,
+    isCharging: fix.isCharging ?? null,
+    connection: fix.isQueued ? 'queued' : 'online',
+    zoneState: fix.zoneState || ZONE_STATE.UNKNOWN,
+    insideSafeZone: fix.isInsideSafeZone ?? null,
+    distanceFromSafeZone: fix.distanceFromSafeZone ?? null,
+    recordedAt: fix.recordedAt,
+    createdAt: fix.createdAt ?? null,
+  };
+};
 
 module.exports = mongoose.model('Location', locationSchema);

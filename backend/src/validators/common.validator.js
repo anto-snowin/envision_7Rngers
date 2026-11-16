@@ -12,12 +12,12 @@ const idParam = z.object({ id: objectId });
 /** Route params carrying a `:patientId`. */
 const patientIdParam = z.object({ patientId: objectId });
 
-/** Patient tracking code: 12 chars from the unambiguous alphabet. */
-const trackingCode = z
+/** Patient login code, e.g. `PT-7KQ3-M9XB`. */
+const patientCode = z
   .string()
   .trim()
   .toUpperCase()
-  .regex(/^[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{8,16}$/, 'Invalid tracking code format');
+  .regex(/^PT-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{4}$/, 'Invalid patient code format');
 
 /** Latitude in decimal degrees. */
 const latitude = z.coerce
@@ -38,14 +38,26 @@ const radius = z.coerce
   .max(20000, 'Radius must be at most 20,000 metres');
 
 /**
- * Standard pagination + sort query.
+ * Password policy.
+ *
+ * Length is the requirement that actually matters, so it carries the weight
+ * here rather than a character-class rule that mostly teaches people to append
+ * "!1". Eight is the floor; the one digit requirement is kept because it is
+ * what the sign-up form promises.
+ */
+const password = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(128, 'Password must be at most 128 characters')
+  .regex(/[0-9]/, 'Password must contain at least one number');
+
+/**
+ * Standard pagination query.
  * `limit` is capped so a client cannot request an unbounded page.
  */
 const pagination = z.object({
   page: z.coerce.number().int().min(1).default(1),
   limit: z.coerce.number().int().min(1).max(100).default(20),
-  sort: z.string().trim().optional(),
-  search: z.string().trim().max(120).optional(),
 });
 
 /** ISO date string accepted from query parameters. */
@@ -54,14 +66,21 @@ const isoDate = z
   .trim()
   .refine((value) => !Number.isNaN(new Date(value).getTime()), 'Must be a valid date');
 
+/** Query flags arrive as the strings "true"/"false". */
+const booleanFlag = z
+  .union([z.boolean(), z.enum(['true', 'false'])])
+  .transform((value) => value === true || value === 'true');
+
 module.exports = {
   objectId,
   idParam,
   patientIdParam,
-  trackingCode,
+  patientCode,
   latitude,
   longitude,
   radius,
+  password,
   pagination,
   isoDate,
+  booleanFlag,
 };

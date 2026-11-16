@@ -1,61 +1,54 @@
 /**
- * Caretaker authentication schemas.
+ * Request schemas for the authentication routes.
  */
 const { z } = require('zod');
+const { password, objectId } = require('./common.validator');
 
-/**
- * Password policy: long enough to resist guessing, with a mix of character
- * classes. Kept deliberately readable so the frontend can mirror the same rules
- * and show the user exactly what is missing.
- */
-const password = z
+const email = z
   .string()
-  .min(8, 'Password must be at least 8 characters')
-  .max(128, 'Password must be at most 128 characters')
-  .regex(/[a-z]/, 'Password must contain a lowercase letter')
-  .regex(/[A-Z]/, 'Password must contain an uppercase letter')
-  .regex(/[0-9]/, 'Password must contain a number');
+  .trim()
+  .toLowerCase()
+  .pipe(z.email('Enter a valid email address'))
+  .pipe(z.string().max(160));
 
-const email = z.string().trim().toLowerCase().pipe(z.email('Enter a valid email address'));
-
-const registerSchema = z.object({
-  name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
+const caretakerRegisterSchema = z.object({
+  name: z.string().trim().min(2, 'Enter your name').max(80),
   email,
   password,
-  phone: z.string().trim().max(32).optional().default(''),
-  organisation: z.string().trim().max(120).optional().default(''),
-});
-
-const loginSchema = z.object({
-  email,
-  // Login does not re-apply the strength policy: an existing account may
-  // predate it, and rejecting a correct password would be a lockout.
-  password: z.string().min(1, 'Password is required'),
-});
-
-const updateProfileSchema = z.object({
-  name: z.string().trim().min(2).max(80).optional(),
   phone: z.string().trim().max(32).optional(),
-  organisation: z.string().trim().max(120).optional(),
-  preferences: z
-    .object({
-      theme: z.enum(['light', 'dark', 'system']).optional(),
-      alertSound: z.boolean().optional(),
-      emailAlerts: z.boolean().optional(),
-    })
-    .optional(),
+});
+
+const caretakerLoginSchema = z.object({
+  email,
+  // No policy check on login: the stored password predates any policy change,
+  // and rejecting it here would lock the account out of its own sign-in form.
+  password: z.string().min(1, 'Enter your password').max(128),
+});
+
+const patientLoginSchema = z.object({
+  /**
+   * One field for three accepted identifiers — patient code, email or phone.
+   * Asking the patient to pick which one they are typing would be one decision
+   * too many on a screen designed to be used by someone with dementia.
+   */
+  identifier: z.string().trim().min(3, 'Enter your patient code').max(160),
+  password: z.string().min(1, 'Enter your password').max(128),
 });
 
 const changePasswordSchema = z.object({
-  currentPassword: z.string().min(1, 'Current password is required'),
+  currentPassword: z.string().min(1, 'Enter your current password').max(128),
   newPassword: password,
 });
 
+const sessionIdParam = z.object({
+  sessionId: z.string().trim().regex(/^[0-9a-f]{24,64}$/, 'Invalid session id'),
+});
+
 module.exports = {
-  registerSchema,
-  loginSchema,
-  updateProfileSchema,
+  caretakerRegisterSchema,
+  caretakerLoginSchema,
+  patientLoginSchema,
   changePasswordSchema,
-  password,
-  email,
+  sessionIdParam,
+  objectId,
 };

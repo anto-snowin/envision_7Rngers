@@ -1,190 +1,262 @@
 /**
- * Caretaker authentication: register, login, profile, logout.
+ * Authentication for both roles.
+ *
+ * Caretakers sign in with an email address; patients sign in on their phone
+ * with the patient code, email or phone number the caretaker gave them. Both
+ * receive a JWT carrying their role, and both are rate limited by the auth
+ * limiter mounted on these routes.
  */
-const { User, Session } = require('../models');
+const { Caretaker, Patient } = require('../models');
 const { signToken } = require('../utils/jwt');
-const { ok, created } = require('../utils/response');
+const { ROLES } = require('../utils/constants');
+const { safeEqual } = require('../utils/tokens');
+const sessionService = require('../services/session.service');
 const ApiError = require('../utils/ApiError');
 const asyncHandler = require('../utils/asyncHandler');
-const env = require('../config/env');
+const { ok, created } = require('../utils/response');
 const logger = require('../utils/logger');
 
-/** Days a session document survives before the TTL index reaps it. */
-const SESSION_TTL_DAYS = 7;
+/**
+ * Deliberately identical message for "no such account" and "wrong password".
+ * Distinguishing them turns the login form into an account-enumeration oracle.
+ */
+const BAD_CREDENTIALS = 'Those sign-in details are not correct';
 
-/** Create the session record that backs a freshly issued token. */
-async function openSession(user, req) {
-  return Session.create({
-    kind: 'caretaker',
-    user: user._id,
-    userAgent: req.headers['user-agent'] || '',
-    ipAddress: req.ip || '',
-    expiresAt: new Date(Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000),
-  });
-}
+/* ------------------------------------------------------------- caretakers --- */
 
 /**
- * POST /api/auth/register
- * Creates a caretaker account and signs them straight in.
+ * POST /api/auth/caretaker/register
  */
-const register = asyncHandler(async (req, res) => {
-  const { name, email, password, phone, organisation } = req.body;
+const registerCaretaker = asyncHandler(async (req, res) => {
+  const { name, email, password, phone } = req.body;
 
-  const existing = await User.findOne({ email }).select('_id').lean();
-  if (existing) {
-    throw ApiError.conflict('An account with this email already exists');
-  }
+  const existing = await Caretaker.findOne({ email }).select('_id').lean();
+  if (existing) throw ApiError.conflict('An account with this email already exists');
 
-  // The pre-save hook hashes the password; it is never stored in plaintext.
-  const user = await User.create({ name, email, password, phone, organisation });
+  const caretaker = await Caretaker.create({ name, email, password, phone: phone || '' });
 
-  const session = await openSession(user, req);
-  const token = signToken(user, { sessionId: session.sessionId });
-
-  logger.info(`New caretaker registered: ${email}`);
-
-  return created(res, {
-    token,
-    expiresIn: env.JWT_EXPIRES_IN,
-    user: user.toJSON(),
+  const session = await sessionService.openAuthSession({
+    role: ROLES.CARETAKER,
+    caretakerId: caretaker._id,
+    req,
   });
+
+  const token = signToken(
+    { id: caretaker._id, role: ROLES.CARETAKER, email: caretaker.email },
+    { sessionId: session.sessionId }
+  );
+
+  logger.info(`Caretaker registered: ${caretaker.email}`);
+
+  return created(res, { token, role: ROLES.CARETAKER, caretaker: caretaker.toPublic() });
 });
 
 /**
- * POST /api/auth/login
+ * POST /api/auth/caretaker/login
  */
-const login = asyncHandler(async (req, res) => {
+const loginCaretaker = asyncHandler(async (req, res) => {
   const { email, password } = req.body;
 
-  // `password` is `select: false` on the schema, so ask for it explicitly.
-  const user = await User.findOne({ email }).select('+password');
+  const caretaker = await Caretaker.findOne({ email }).select('+password');
+  if (!caretaker) throw ApiError.unauthorized(BAD_CREDENTIALS);
+  if (!caretaker.isActive) throw ApiError.forbidden('This account has been deactivated');
 
-  // Identical message for "no such user" and "wrong password" so the endpoint
-  // cannot be used to discover which emails have accounts.
-  if (!user || !(await user.comparePassword(password))) {
-    throw ApiError.unauthorized('Incorrect email or password');
-  }
-  if (!user.isActive) {
-    throw ApiError.forbidden('This account has been deactivated');
-  }
+  const matches = await caretaker.comparePassword(password);
+  if (!matches) throw ApiError.unauthorized(BAD_CREDENTIALS);
 
-  user.lastLoginAt = new Date();
-  await user.save();
+  caretaker.lastLoginAt = new Date();
+  await caretaker.save();
 
-  const session = await openSession(user, req);
-  const token = signToken(user, { sessionId: session.sessionId });
+  const session = await sessionService.openAuthSession({
+    role: ROLES.CARETAKER,
+    caretakerId: caretaker._id,
+    req,
+  });
+
+  const token = signToken(
+    { id: caretaker._id, role: ROLES.CARETAKER, email: caretaker.email },
+    { sessionId: session.sessionId }
+  );
+
+  return ok(res, { token, role: ROLES.CARETAKER, caretaker: caretaker.toPublic() });
+});
+
+/* ---------------------------------------------------------------- patients --- */
+
+/**
+ * Find a patient by any of their three accepted identifiers.
+ *
+ * The patient code is compared again in constant time after the lookup so the
+ * query itself cannot be used as a timing oracle for valid codes.
+ */
+async function findPatientByIdentifier(identifier) {
+  const value = String(identifier || '').trim();
+  if (!value) return null;
+
+  const asCode = value.toUpperCase();
+  const byCode = await Patient.findOne({ patientCode: asCode }).select('+password');
+  if (byCode && safeEqual(byCode.patientCode, asCode)) return byCode;
+
+  const lowered = value.toLowerCase();
+  const byEmail = await Patient.findOne({ email: lowered }).select('+password');
+  if (byEmail) return byEmail;
+
+  return Patient.findOne({ phone: value }).select('+password');
+}
+
+/**
+ * POST /api/auth/patient/login
+ *
+ * On success the device also gets a tracking session, so the history page can
+ * later distinguish "tracking was off" from "tracking was on but silent".
+ */
+const loginPatient = asyncHandler(async (req, res) => {
+  const { identifier, password } = req.body;
+
+  const patient = await findPatientByIdentifier(identifier);
+  if (!patient) throw ApiError.unauthorized(BAD_CREDENTIALS);
+  if (!patient.isActive) throw ApiError.forbidden('Tracking has been disabled for this account');
+
+  const matches = await patient.comparePassword(password);
+  if (!matches) throw ApiError.unauthorized(BAD_CREDENTIALS);
+
+  patient.lastLoginAt = new Date();
+  await patient.save();
+
+  const authSession = await sessionService.openAuthSession({
+    role: ROLES.PATIENT,
+    patientId: patient._id,
+    req,
+  });
+
+  const trackingSession = await sessionService.openTrackingSession({
+    patient,
+    authSession,
+    req,
+  });
+
+  const token = signToken(
+    { id: patient._id, role: ROLES.PATIENT, patientCode: patient.patientCode },
+    { sessionId: authSession.sessionId }
+  );
+
+  const caretaker = await Caretaker.findById(patient.caretaker).select('name phone').lean();
+
+  logger.info(`Patient device signed in: ${patient.patientCode}`);
 
   return ok(res, {
     token,
-    expiresIn: env.JWT_EXPIRES_IN,
-    user: user.toJSON(),
+    role: ROLES.PATIENT,
+    patient: patient.toSelf(caretaker),
+    session: trackingSession.toPublic(),
   });
+});
+
+/* ------------------------------------------------------------------ shared --- */
+
+/**
+ * POST /api/auth/logout
+ *
+ * Revokes the session behind the presented token. For a patient this also ends
+ * the tracking run, which is the event the caretaker's history needs.
+ */
+const logout = asyncHandler(async (req, res) => {
+  const sessionId = req.token?.sid;
+  if (sessionId) await sessionService.revokeAuthSession(sessionId);
+
+  if (req.role === ROLES.PATIENT && req.patient) {
+    await sessionService.closeOpenTrackingSessions(req.patient._id, 'logout');
+  }
+
+  return ok(res, null, undefined, 200);
 });
 
 /**
  * GET /api/auth/me
- * Used on app boot to restore a session from a stored token.
+ *
+ * Used by the client to verify a stored token on load. The response shape
+ * differs by role, because the two roles genuinely know different things about
+ * themselves.
  */
-const getCurrentUser = asyncHandler(async (req, res) => ok(res, { user: req.user.toJSON() }));
-
-/**
- * PUT /api/auth/me
- */
-const updateProfile = asyncHandler(async (req, res) => {
-  const { name, phone, organisation, preferences } = req.body;
-
-  if (name !== undefined) req.user.name = name;
-  if (phone !== undefined) req.user.phone = phone;
-  if (organisation !== undefined) req.user.organisation = organisation;
-  if (preferences) {
-    req.user.preferences = { ...req.user.preferences.toObject(), ...preferences };
+const me = asyncHandler(async (req, res) => {
+  if (req.role === ROLES.CARETAKER) {
+    return ok(res, { role: ROLES.CARETAKER, caretaker: req.caretaker.toPublic() });
   }
 
-  await req.user.save();
-  return ok(res, { user: req.user.toJSON() });
-});
-
-/**
- * PUT /api/auth/password
- * Changing the password revokes every other session, since a password change
- * usually means the old one may be compromised.
- */
-const changePassword = asyncHandler(async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-
-  const user = await User.findById(req.user._id).select('+password');
-  if (!(await user.comparePassword(currentPassword))) {
-    throw ApiError.badRequest('Current password is incorrect', {
-      fields: { currentPassword: 'Current password is incorrect' },
-    });
-  }
-
-  user.password = newPassword; // re-hashed by the pre-save hook
-  await user.save();
-
-  const keepSessionId = req.session ? req.session.sessionId : null;
-  await Session.updateMany(
-    { user: user._id, kind: 'caretaker', sessionId: { $ne: keepSessionId } },
-    { isRevoked: true, endReason: 'revoked', endedAt: new Date() }
-  );
-
-  return ok(res, { message: 'Password updated. Other devices have been signed out.' });
-});
-
-/**
- * POST /api/auth/logout
- * Revokes the current session so the token stops working immediately.
- */
-const logout = asyncHandler(async (req, res) => {
-  if (req.session) {
-    req.session.isRevoked = true;
-    req.session.endReason = 'logout';
-    req.session.endedAt = new Date();
-    await req.session.save();
-  }
-  return ok(res, { message: 'Signed out' });
-});
-
-/**
- * GET /api/auth/sessions
- * Lets a caretaker see where they are signed in.
- */
-const listSessions = asyncHandler(async (req, res) => {
-  const sessions = await Session.find({ user: req.user._id, kind: 'caretaker', isRevoked: false })
-    .sort({ lastActivityAt: -1 })
-    .select('sessionId userAgent ipAddress createdAt lastActivityAt expiresAt')
-    .lean();
-
-  const currentId = req.session ? req.session.sessionId : null;
+  const caretaker = await Caretaker.findById(req.patient.caretaker).select('name phone').lean();
+  const trackingSession = await sessionService.getOpenTrackingSession(req.patient._id);
 
   return ok(res, {
-    sessions: sessions.map((session) => ({
-      ...session,
-      isCurrent: session.sessionId === currentId,
-    })),
+    role: ROLES.PATIENT,
+    patient: req.patient.toSelf(caretaker),
+    session: trackingSession ? trackingSession.toPublic() : null,
   });
 });
 
-/**
- * DELETE /api/auth/sessions/:sessionId
- */
-const revokeSession = asyncHandler(async (req, res) => {
-  const result = await Session.findOneAndUpdate(
-    { sessionId: req.params.sessionId, user: req.user._id, kind: 'caretaker' },
-    { isRevoked: true, endReason: 'revoked', endedAt: new Date() },
-    { new: true }
+/** GET /api/auth/sessions — the caretaker's other active sign-ins. */
+const listSessions = asyncHandler(async (req, res) => {
+  const sessions = await sessionService.listCaretakerSessions(req.caretaker._id);
+  const currentSessionId = req.token?.sid || null;
+
+  return ok(
+    res,
+    sessions.map((session) => ({
+      ...session,
+      isCurrent: session.sessionId === currentSessionId,
+    }))
   );
-  if (!result) throw ApiError.notFound('Session not found');
-  return ok(res, { message: 'Session revoked' });
+});
+
+/** DELETE /api/auth/sessions/:sessionId — revoke one sign-in. */
+const revokeSession = asyncHandler(async (req, res) => {
+  const { sessionId } = req.params;
+
+  // Scope the revoke to this caretaker's own sessions so one account cannot
+  // sign another out by guessing a handle.
+  const owned = await sessionService.listCaretakerSessions(req.caretaker._id);
+  if (!owned.some((session) => session.sessionId === sessionId)) {
+    throw ApiError.notFound('Session not found');
+  }
+
+  await sessionService.revokeAuthSession(sessionId);
+  return ok(res, null);
+});
+
+/** PUT /api/auth/password — change the caretaker's own password. */
+const changePassword = asyncHandler(async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  const caretaker = await Caretaker.findById(req.caretaker._id).select('+password');
+  const matches = await caretaker.comparePassword(currentPassword);
+  if (!matches) throw ApiError.badRequest('Your current password is not correct');
+
+  caretaker.password = newPassword;
+  await caretaker.save();
+
+  // Every other sign-in is invalidated: a password change is how someone
+  // responds to a suspected compromise, so stale tokens must stop working.
+  await sessionService.revokeAllForSubject({ caretakerId: caretaker._id });
+
+  const session = await sessionService.openAuthSession({
+    role: ROLES.CARETAKER,
+    caretakerId: caretaker._id,
+    req,
+  });
+  const token = signToken(
+    { id: caretaker._id, role: ROLES.CARETAKER, email: caretaker.email },
+    { sessionId: session.sessionId }
+  );
+
+  return ok(res, { token, role: ROLES.CARETAKER, caretaker: caretaker.toPublic() });
 });
 
 module.exports = {
-  register,
-  login,
-  getCurrentUser,
-  updateProfile,
-  changePassword,
+  registerCaretaker,
+  loginCaretaker,
+  loginPatient,
   logout,
+  me,
   listSessions,
   revokeSession,
+  changePassword,
 };

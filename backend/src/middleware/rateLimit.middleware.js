@@ -4,8 +4,7 @@
  * Three tiers, because the endpoints have very different traffic shapes:
  *  - `apiLimiter`      general protection for the dashboard API
  *  - `authLimiter`     strict, to blunt credential stuffing on login/register
- *  - `ingestLimiter`   generous, since every patient phone legitimately posts a
- *                      fix every 5 seconds and may flush a queued backlog
+ *  - `ingestLimiter`   per-patient, sized for a 3-minute cadence plus backlog
  */
 const rateLimit = require('express-rate-limit');
 const env = require('../config/env');
@@ -43,19 +42,23 @@ const authLimiter = rateLimit({
 });
 
 /**
- * Location ingest limiter, keyed per tracking code rather than per IP so that
- * several patients behind one mobile carrier NAT do not starve each other.
+ * Location ingest limiter, keyed per authenticated patient rather than per IP
+ * so several patients behind one mobile carrier NAT do not starve each other.
  *
- * Budget: a 5-second cadence is 12 fixes/minute; 240/minute leaves ample room
- * for offline-queue flushes without allowing true abuse.
+ * Budget: the cadence is one upload every three minutes, so 30 per minute is
+ * already sixty times the steady-state rate. The headroom covers a device
+ * flushing an offline backlog in several batches and a user reloading the page
+ * repeatedly, while still capping a runaway client.
  */
 const ingestLimiter = rateLimit({
   ...baseOptions,
   windowMs: 60 * 1000,
-  limit: 240,
+  limit: 30,
   keyGenerator: (req) => {
-    const code = req.body?.trackingCode || req.headers['x-tracking-code'];
-    if (code) return `track:${String(code).toUpperCase()}`;
+    // `requirePatient` has already run on these routes, so the patient id is
+    // authenticated — it cannot be spoofed to borrow another patient's budget.
+    if (req.patient?._id) return `patient:${req.patient._id}`;
+
     // Fall back to the library's IPv6-safe IP key helper, which normalises an
     // IPv6 address to its /56 subnet so a single client cannot rotate
     // addresses within its prefix to reset the counter.

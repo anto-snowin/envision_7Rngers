@@ -1,15 +1,15 @@
 /**
- * User (caretaker) account.
+ * Caretaker account — the family member or carer who monitors patients.
  *
- * Only caretakers authenticate. Patients are tracked subjects and never hold
- * credentials, which is why there is no patient login anywhere in the system.
+ * Patients have their own credentialled accounts (see `Patient`), so this model
+ * covers one of the system's two login roles rather than all of it.
  */
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const SALT_ROUNDS = 12;
 
-const userSchema = new mongoose.Schema(
+const caretakerSchema = new mongoose.Schema(
   {
     name: {
       type: String,
@@ -34,21 +34,18 @@ const userSchema = new mongoose.Schema(
     },
     phone: { type: String, trim: true, default: '' },
     organisation: { type: String, trim: true, default: '' },
-    role: {
-      type: String,
-      enum: ['caretaker', 'admin'],
-      default: 'caretaker',
-    },
+
     preferences: {
-      theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' },
       alertSound: { type: Boolean, default: true },
       emailAlerts: { type: Boolean, default: false },
     },
+
     lastLoginAt: { type: Date, default: null },
     isActive: { type: Boolean, default: true },
   },
   {
-    timestamps: true, // createdAt / updatedAt
+    collection: 'caretakers',
+    timestamps: true,
     toJSON: {
       virtuals: true,
       transform(_doc, ret) {
@@ -66,14 +63,25 @@ const userSchema = new mongoose.Schema(
  * Declared `async` with no `next` parameter: Mongoose 9 resolves the returned
  * promise and no longer supplies a callback to async middleware.
  */
-userSchema.pre('save', async function hashPassword() {
+caretakerSchema.pre('save', async function hashPassword() {
   if (!this.isModified('password')) return;
   this.password = await bcrypt.hash(this.password, SALT_ROUNDS);
 });
 
 /** Compare a plaintext candidate against the stored hash. */
-userSchema.methods.comparePassword = function comparePassword(candidate) {
+caretakerSchema.methods.comparePassword = function comparePassword(candidate) {
   return bcrypt.compare(candidate, this.password);
 };
 
-module.exports = mongoose.model('User', userSchema);
+/** Shape returned to the client. */
+caretakerSchema.methods.toPublic = function toPublic() {
+  return {
+    id: String(this._id),
+    name: this.name,
+    email: this.email,
+    phone: this.phone || null,
+    createdAt: this.createdAt,
+  };
+};
+
+module.exports = mongoose.model('Caretaker', caretakerSchema);

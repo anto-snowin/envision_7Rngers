@@ -1,29 +1,37 @@
 /**
- * JWT issuing and verification for caretaker accounts.
+ * JWT issuing and verification.
+ *
+ * One token shape serves both roles; the `role` claim decides what the bearer
+ * may do. Nothing else in the system infers a role from the shape of a request,
+ * so a patient token can never be mistaken for a caretaker token.
  */
 const jwt = require('jsonwebtoken');
 const env = require('../config/env');
 const ApiError = require('./ApiError');
+const { ROLES } = require('./constants');
 
-const ISSUER = 'dementia-care-api';
+const ISSUER = 'sentinel-api';
 
 /**
- * Sign an access token for a caretaker.
+ * Sign an access token.
  *
- * `sessionId` is embedded as the `sid` claim so that signing out can revoke
- * this specific token server-side, before its natural expiry.
+ * `sessionId` becomes the `sid` claim so signing out can revoke this specific
+ * token server-side, before its natural expiry.
  *
- * @param {{id?:string, _id?:string, email:string, role?:string}} user
- * @param {{sessionId?:string, expiresIn?:string}} [options]
+ * @param {{ id:string, role:string, email?:string, patientCode?:string }} subject
+ * @param {{ sessionId?:string, expiresIn?:string }} [options]
  */
-function signToken(user, options = {}) {
+function signToken(subject, options = {}) {
   const { sessionId, expiresIn = env.JWT_EXPIRES_IN } = options;
 
-  const payload = {
-    sub: String(user.id || user._id),
-    email: user.email,
-    role: user.role || 'caretaker',
-  };
+  if (!subject?.id) throw new Error('signToken requires a subject id');
+  if (!Object.values(ROLES).includes(subject.role)) {
+    throw new Error(`signToken requires a known role, received "${subject.role}"`);
+  }
+
+  const payload = { sub: String(subject.id), role: subject.role };
+  if (subject.email) payload.email = subject.email;
+  if (subject.patientCode) payload.code = subject.patientCode;
   if (sessionId) payload.sid = sessionId;
 
   return jwt.sign(payload, env.JWT_SECRET, { expiresIn, issuer: ISSUER });
@@ -49,10 +57,4 @@ function extractBearerToken(req) {
   return token || null;
 }
 
-/** Seconds until a decoded token expires (used to size client-side timers). */
-function secondsUntilExpiry(decoded) {
-  if (!decoded || !decoded.exp) return 0;
-  return Math.max(0, decoded.exp - Math.floor(Date.now() / 1000));
-}
-
-module.exports = { signToken, verifyToken, extractBearerToken, secondsUntilExpiry };
+module.exports = { signToken, verifyToken, extractBearerToken };

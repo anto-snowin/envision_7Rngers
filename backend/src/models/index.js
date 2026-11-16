@@ -4,11 +4,12 @@
  * `populate()` call tries to resolve a ref by name.
  */
 module.exports = {
-  User: require('./User'),
+  Caretaker: require('./Caretaker'),
   Patient: require('./Patient'),
   Location: require('./Location'),
   Alert: require('./Alert'),
-  Geofence: require('./Geofence'),
+  SafeZone: require('./SafeZone'),
   DangerZone: require('./DangerZone'),
-  Session: require('./Session'),
+  AuthSession: require('./AuthSession'),
+  TrackingSession: require('./TrackingSession'),
 };
