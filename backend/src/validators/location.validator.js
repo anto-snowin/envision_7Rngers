@@ -1,81 +1,69 @@
 /**
- * Location ingest and history schemas.
+ * Request schemas for the location endpoints.
  */
 const { z } = require('zod');
-const { latitude, longitude, trackingCode, isoDate } = require('./common.validator');
+const { latitude, longitude, isoDate } = require('./common.validator');
+const { DEVICE_REPORTABLE_ALERTS } = require('../utils/constants');
 
-/** One GPS fix as the patient portal reports it. */
+/** A nullable number that tolerates the nulls a browser actually sends. */
+const optionalNumber = z.coerce.number().finite().nullable().optional();
+
 const fixSchema = z.object({
   latitude,
   longitude,
-  accuracy: z.coerce.number().min(0).max(100000).nullable().optional(),
-  altitude: z.coerce.number().nullable().optional(),
-  speed: z.coerce.number().min(0).nullable().optional(),
-  heading: z.coerce.number().min(0).max(360).nullable().optional(),
+  accuracy: optionalNumber,
+  altitude: optionalNumber,
+  speed: optionalNumber,
+  heading: optionalNumber,
   batteryLevel: z.coerce.number().min(0).max(100).nullable().optional(),
   isCharging: z.boolean().nullable().optional(),
-  isQueued: z.boolean().optional().default(false),
-  recordedAt: z.union([isoDate, z.coerce.number()]).optional(),
-});
-
-/** POST /api/location — a single live fix. */
-const createLocationSchema = fixSchema.extend({
-  trackingCode,
-  sessionId: z.string().trim().max(64).optional(),
+  recordedAt: z.union([isoDate, z.number()]).optional(),
+  /** Set by the device when the fix came out of its offline queue. */
+  queued: z.boolean().optional(),
+  isQueued: z.boolean().optional(),
 });
 
 /**
- * POST /api/location/batch — a backlog flushed after an outage.
- * Capped at 500 fixes per request (over 40 minutes of 5-second tracking) so one
- * upload cannot monopolise the server.
+ * POST /api/location/update
+ *
+ * The cap of 200 fixes per request bounds both the body size and the work one
+ * request can trigger: each fix runs the full geofence evaluation, so an
+ * unbounded batch would be an easy way to tie up the event loop.
  */
-const batchLocationSchema = z.object({
-  trackingCode,
-  sessionId: z.string().trim().max(64).optional(),
-  fixes: z
-    .array(fixSchema)
-    .min(1, 'At least one fix is required')
-    .max(500, 'Send at most 500 fixes per request'),
+const updateLocationSchema = z.object({
+  fixes: z.array(fixSchema).min(1, 'At least one location fix is required').max(200),
+  connection: z.enum(['online', 'queued']).optional(),
 });
 
-/** GET /api/location/history/:patientId */
+const pingSchema = z.object({
+  online: z.boolean().optional(),
+  batteryLevel: z.coerce.number().min(0).max(100).nullable().optional(),
+  isCharging: z.boolean().nullable().optional(),
+});
+
+const sosSchema = z.object({
+  // All optional: an SOS must succeed even when the device has no fix at all.
+  latitude: latitude.nullable().optional(),
+  longitude: longitude.nullable().optional(),
+  accuracy: optionalNumber,
+});
+
+const deviceEventSchema = z.object({
+  type: z.enum(DEVICE_REPORTABLE_ALERTS),
+  message: z.string().trim().max(400).optional(),
+});
+
 const historyQuerySchema = z.object({
   from: isoDate.optional(),
   to: isoDate.optional(),
-  limit: z.coerce.number().int().min(1).max(10000).default(2000),
-});
-
-/**
- * POST /api/location/device-event — GPS or connectivity problems reported by
- * the patient's browser, which the server cannot otherwise observe.
- */
-const deviceEventSchema = z.object({
-  trackingCode,
-  type: z.enum([
-    'GPS_UNAVAILABLE',
-    'INTERNET_DISCONNECTED',
-    'INTERNET_RESTORED',
-    'TRACKING_STOPPED',
-  ]),
-  message: z.string().trim().max(300).optional().default(''),
-  metadata: z.record(z.string(), z.unknown()).optional().default({}),
-});
-
-/** POST /api/location/sos */
-const sosSchema = z.object({
-  trackingCode,
-  latitude: latitude.nullable().optional(),
-  longitude: longitude.nullable().optional(),
-  accuracy: z.coerce.number().min(0).nullable().optional(),
-  batteryLevel: z.coerce.number().min(0).max(100).nullable().optional(),
-  message: z.string().trim().max(300).optional().default(''),
+  limit: z.coerce.number().int().min(1).max(5000).default(2000),
 });
 
 module.exports = {
   fixSchema,
-  createLocationSchema,
-  batchLocationSchema,
-  historyQuerySchema,
-  deviceEventSchema,
+  updateLocationSchema,
+  pingSchema,
   sosSchema,
+  deviceEventSchema,
+  historyQuerySchema,
 };

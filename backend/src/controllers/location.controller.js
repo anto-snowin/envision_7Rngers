@@ -1,298 +1,235 @@
 /**
- * Location ingest (patient portal) and history retrieval (caretaker dashboard).
+ * Location endpoints.
  *
- * The write endpoints authenticate with a patient tracking code rather than a
- * JWT, because the patient never logs in. The read endpoints require a
- * caretaker JWT and patient ownership.
+ * Writes come from the patient device and are authenticated with a patient
+ * token, so no handler here takes a patient id from the request body — the
+ * patient *is* the credential. Reads come from the caretaker dashboard and go
+ * through `requirePatientOwnership`.
  */
-const { Location, Session, Geofence } = require('../models');
-const { ok, created } = require('../utils/response');
-const { ALERT_TYPES, SOCKET_EVENTS } = require('../utils/constants');
+const { Location, Alert } = require('../models');
+const { ALERT_TYPES, DEVICE_REPORTABLE_ALERTS, SOCKET_EVENTS } = require('../utils/constants');
+const { pathDistance } = require('../utils/geo');
 const locationService = require('../services/location.service');
-const analyticsService = require('../services/analytics.service');
 const alertService = require('../services/alert.service');
-const geofenceService = require('../services/geofence.service');
+const presenceService = require('../services/presence.service');
+const sessionService = require('../services/session.service');
 const emitter = require('../sockets/emitter');
-const asyncHandler = require('../utils/asyncHandler');
+const env = require('../config/env');
 const ApiError = require('../utils/ApiError');
+const asyncHandler = require('../utils/asyncHandler');
+const { ok } = require('../utils/response');
+
+/* ------------------------------------------------- patient device (writes) --- */
 
 /**
- * GET /api/location/session/:trackingCode
+ * POST /api/location/update
  *
- * Called when the patient portal opens. Returns just enough for the phone to
- * render its own status screen — the patient's first name, the tracking
- * cadence and their zones — and opens a tracking session.
- *
- * Deliberately does NOT return medical notes, emergency contacts or caretaker
- * details: the tracking link may be open on an unattended phone.
+ * Accepts one fix or a batch drained from the device's offline queue. The
+ * response tells the device the server's verdict on its position so the patient
+ * screen can show "at home" without doing any geofencing itself.
  */
-const startTrackingSession = asyncHandler(async (req, res) => {
-  const patient = req.patient;
+const updateLocation = asyncHandler(async (req, res) => {
+  const { fixes, connection } = req.body;
 
-  const session = await Session.create({
-    kind: 'patient',
-    patient: patient._id,
-    userAgent: req.headers['user-agent'] || '',
-    ipAddress: req.ip || '',
-    expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+  const session = await sessionService.getOpenTrackingSession(req.patient._id);
+
+  const result = await locationService.ingestBatch(req.patient, fixes, {
+    trackingSessionId: session?._id,
   });
 
-  const [geofence, dangerZones] = await Promise.all([
-    geofenceService.getActiveGeofence(patient._id),
-    geofenceService.getApplicableDangerZones(patient.caretaker, patient._id),
-  ]);
+  if (!result.accepted) {
+    throw ApiError.badRequest(
+      result.errors[0]?.reason || 'No usable location fix was supplied'
+    );
+  }
 
-  return created(res, {
-    sessionId: session.sessionId,
-    patient: {
-      _id: String(patient._id),
-      name: patient.name,
-      trackingCode: patient.trackingCode,
-    },
-    // The phone draws its own safe zone so the patient can see where they are.
-    geofence: geofence
-      ? {
-          name: geofence.name,
-          latitude: geofence.latitude,
-          longitude: geofence.longitude,
-          radius: geofence.radius,
-        }
-      : null,
-    dangerZones: dangerZones.map((zone) => ({
-      name: zone.name,
-      latitude: zone.latitude,
-      longitude: zone.longitude,
-      radius: zone.radius,
-      category: zone.category,
-    })),
-    config: {
-      intervalMs: Number(process.env.LOCATION_INTERVAL_MS || 5000),
-    },
+  return ok(res, {
+    accepted: result.accepted,
+    rejected: result.rejected,
+    connection: connection || 'online',
+    insideSafeZone: result.insideSafeZone,
+    dangerZone: result.dangerZone,
+    distanceFromSafeZone: result.distanceFromSafeZone,
+    alerts: result.alerts,
   });
 });
 
 /**
- * POST /api/location
- * One live GPS fix from the patient's phone.
- */
-const createLocation = asyncHandler(async (req, res) => {
-  // trackingCode is consumed by the auth middleware; strip it from the fix.
-  const { trackingCode: _code, sessionId, ...fix } = req.body;
-
-  const { payload, evaluation } = await locationService.ingestFix(req.patient, fix);
-
-  if (sessionId) {
-    await Session.updateOne(
-      { sessionId, kind: 'patient' },
-      { $inc: { fixCount: 1 }, lastActivityAt: new Date() }
-    );
-  }
-
-  // Echo the zone verdict so the patient's phone can show a reassuring
-  // "you are in your safe zone" state without a second request.
-  return created(res, {
-    accepted: true,
-    recordedAt: payload.recordedAt,
-    zoneState: evaluation.zoneState,
-    isInsideSafeZone: evaluation.isInsideSafeZone,
-    distanceFromHome: evaluation.distanceFromHome,
-    alertsRaised: evaluation.alerts.length,
-  });
-});
-
-/**
- * POST /api/location/batch
+ * POST /api/location/ping
  *
- * Flush of fixes the phone buffered in IndexedDB while offline. Returns a
- * per-item outcome so the client knows exactly which records it may delete
- * from its queue.
+ * Keep-alive for a device that has no fix to send.
+ *
+ * This matters because the two failure modes look identical from the server's
+ * side otherwise: a phone whose GPS cannot get a lock is still present and
+ * worth distinguishing from a phone that has been switched off.
  */
-const createLocationBatch = asyncHandler(async (req, res) => {
-  const { fixes, sessionId } = req.body;
+const ping = asyncHandler(async (req, res) => {
+  const { online, batteryLevel, isCharging } = req.body;
 
-  const result = await locationService.ingestBatch(req.patient, fixes);
+  await presenceService.markOnline(req.patient);
 
-  if (sessionId) {
-    await Session.updateOne(
-      { sessionId, kind: 'patient' },
-      { $inc: { fixCount: result.accepted }, lastActivityAt: new Date() }
-    );
-  }
+  emitter.emitToCaretaker(req.patient.caretaker, SOCKET_EVENTS.PRESENCE_UPDATE, {
+    patientId: String(req.patient._id),
+    patientName: req.patient.name,
+    isOnline: online !== false,
+    reason: 'heartbeat',
+    batteryLevel: batteryLevel ?? null,
+    isCharging: isCharging ?? null,
+    lastSeenAt: new Date(),
+  });
 
-  return created(res, result);
+  return ok(res, null);
 });
 
 /**
  * POST /api/location/sos
  *
- * The patient pressed the SOS button. This bypasses the alert cooldown: a
- * second press is a second cry for help, not a duplicate.
+ * Deliberately tolerant: an SOS must go through even with no GPS fix at all, so
+ * the handler falls back to the last known position rather than refusing. A
+ * caretaker who knows "SOS pressed, last seen at the park ten minutes ago" is
+ * far better off than one who gets nothing because the fix failed.
  */
-const triggerSos = asyncHandler(async (req, res) => {
-  const patient = req.patient;
-  const { latitude, longitude, accuracy, batteryLevel, message } = req.body;
+const raiseSos = asyncHandler(async (req, res) => {
+  const { latitude, longitude, accuracy } = req.body;
 
-  // Prefer the coordinates sent with the press; fall back to the last known fix.
-  const hasFreshFix = Number.isFinite(latitude) && Number.isFinite(longitude);
-  const location = hasFreshFix
+  const live = req.patient.liveStatus || {};
+  const hasFix = Number.isFinite(latitude) && Number.isFinite(longitude);
+
+  const location = hasFix
     ? { latitude, longitude, accuracy: accuracy ?? null }
     : {
-        latitude: patient.liveStatus?.latitude ?? null,
-        longitude: patient.liveStatus?.longitude ?? null,
-        accuracy: patient.liveStatus?.accuracy ?? null,
+        latitude: live.latitude ?? null,
+        longitude: live.longitude ?? null,
+        accuracy: live.accuracy ?? null,
       };
 
   const alert = await alertService.createAlert({
-    patient,
+    patient: req.patient,
     type: ALERT_TYPES.SOS,
-    message:
-      message ||
-      `${patient.name} pressed the SOS button` +
-        (hasFreshFix ? '.' : ' (location is the last known position).'),
+    message: hasFix
+      ? `${req.patient.name} pressed the SOS button.`
+      : `${req.patient.name} pressed the SOS button. No current GPS fix — showing their last known position.`,
     location,
     metadata: {
-      pressedAt: new Date(),
-      hasFreshFix,
-      batteryLevel: batteryLevel ?? patient.liveStatus?.batteryLevel ?? null,
-      emergencyContact: patient.emergencyContact,
+      hasLiveFix: hasFix,
+      lastSeenAt: live.lastSeenAt ?? null,
     },
     bypassCooldown: true,
   });
 
-  // If the press carried a fix, record it as a location too so the SOS point
-  // appears on the map trail.
-  if (hasFreshFix) {
-    await locationService
-      .ingestFix(patient, { latitude, longitude, accuracy, batteryLevel })
-      .catch(() => null);
-  }
-
-  return created(res, {
-    acknowledged: true,
-    alertId: alert ? alert._id : null,
-    message: 'Your caretaker has been alerted.',
-  });
+  return ok(res, alert);
 });
 
 /**
  * POST /api/location/device-event
  *
- * Problems only the phone can observe: the GPS returning an error, or the
- * browser noticing it went offline. The phone reports these so the caretaker
- * learns *why* the fixes stopped instead of just seeing silence.
+ * The device reports conditions only it can observe — GPS refused, internet
+ * dropped, tracking stopped. The allow-list is the security boundary: without
+ * it a device could post a fake zone breach for its own patient.
  */
-const reportDeviceEvent = asyncHandler(async (req, res) => {
-  const patient = req.patient;
-  const { type, message, metadata } = req.body;
+const deviceEvent = asyncHandler(async (req, res) => {
+  const { type, message } = req.body;
 
-  // INTERNET_RESTORED / TRACKING_STOPPED are informational and do not alert.
-  const alertable = {
-    GPS_UNAVAILABLE: ALERT_TYPES.GPS_UNAVAILABLE,
-    INTERNET_DISCONNECTED: ALERT_TYPES.INTERNET_DISCONNECTED,
-  };
-
-  let alert = null;
-  if (alertable[type]) {
-    alert = await alertService.createAlert({
-      patient,
-      type: alertable[type],
-      message: message || undefined,
-      location: {
-        latitude: patient.liveStatus?.latitude ?? null,
-        longitude: patient.liveStatus?.longitude ?? null,
-        accuracy: patient.liveStatus?.accuracy ?? null,
-      },
-      metadata: { ...metadata, reportedAt: new Date() },
-    });
+  if (!DEVICE_REPORTABLE_ALERTS.includes(type)) {
+    throw ApiError.badRequest('That event type cannot be reported by a device');
   }
 
-  if (type === 'TRACKING_STOPPED') {
-    emitter.emitToCaretaker(patient.caretaker, SOCKET_EVENTS.PRESENCE_UPDATE, {
-      patientId: String(patient._id),
-      patientName: patient.name,
-      isOnline: false,
-      reason: 'tracking_stopped',
-      lastSeenAt: patient.liveStatus?.lastSeenAt || null,
-    });
+  if (type === ALERT_TYPES.TRACKING_STOPPED) {
+    await sessionService.closeOpenTrackingSessions(req.patient._id, 'stopped');
   }
 
-  return ok(res, { recorded: true, alertRaised: Boolean(alert) });
+  const alert = await alertService.createAlert({
+    patient: req.patient,
+    type,
+    message: message || undefined,
+    location: req.patient.liveStatus || null,
+  });
+
+  return ok(res, alert);
 });
 
-/**
- * GET /api/location/:patientId
- * Latest known fix for a patient.
- */
-const getLatestLocation = asyncHandler(async (req, res) => {
-  const location = await locationService.getLatestLocation(req.patient._id);
-  if (!location) {
-    return ok(res, { location: null, message: 'No location recorded for this patient yet' });
-  }
-  return ok(res, { location });
+/** GET /api/location/me — what the device itself is allowed to read back. */
+const myStatus = asyncHandler(async (req, res) => {
+  const live = req.patient.liveStatus || {};
+  const session = await sessionService.getOpenTrackingSession(req.patient._id);
+
+  return ok(res, {
+    insideSafeZone:
+      live.zoneState === 'inside_safe' ? true : live.zoneState === 'unknown' ? null : false,
+    dangerZone: live.dangerZoneName || null,
+    lastFixAt: live.lastFixAt || null,
+    fixCount: session?.fixCount ?? 0,
+  });
+});
+
+/* -------------------------------------------------- caretaker side (reads) --- */
+
+/** GET /api/location/latest/:patientId */
+const latestLocation = asyncHandler(async (req, res) => {
+  const fix = await locationService.getLatestLocation(req.targetPatient._id);
+  return ok(res, Location.toPublic(fix));
 });
 
 /**
  * GET /api/location/history/:patientId
  *
- * Route history for the history page and route playback. Defaults to the last
- * 24 hours when no range is given.
+ * Returns the points plus a summary, because every caller needs both and the
+ * summary has to be computed from the same point set the map is drawing.
  */
-const getHistory = asyncHandler(async (req, res) => {
+const locationHistory = asyncHandler(async (req, res) => {
   const { from, to, limit } = req.query;
 
-  const rangeTo = to ? new Date(to) : new Date();
-  const rangeFrom = from ? new Date(from) : new Date(rangeTo.getTime() - 24 * 60 * 60 * 1000);
+  const fixes = await locationService.getHistory(req.targetPatient._id, { from, to, limit });
 
-  if (rangeFrom > rangeTo) {
-    throw ApiError.badRequest('"from" must be earlier than "to"');
-  }
+  const outsideCount = fixes.filter((fix) => fix.isInsideSafeZone === false).length;
 
-  const [points, summary, geofence] = await Promise.all([
-    locationService.getHistory(req.patient._id, { from: rangeFrom, to: rangeTo, limit }),
-    analyticsService.getHistorySummary({
-      patientId: req.patient._id,
-      from: rangeFrom,
-      to: rangeTo,
-    }),
-    Geofence.findOne({ patient: req.patient._id, isActive: true }).lean(),
-  ]);
+  /**
+   * Time outside the safe zone is estimated from the number of fixes that fell
+   * outside, multiplied by the upload cadence. It is an estimate and nothing
+   * more: a device that was off for an hour contributes no fixes and therefore
+   * no time, which is the honest answer rather than a guess.
+   */
+  const minutesOutsideSafeZone = Math.round(
+    (outsideCount * env.LOCATION_INTERVAL_MS) / 60000
+  );
 
-  return ok(res, {
-    patient: { _id: String(req.patient._id), name: req.patient.name },
-    range: { from: rangeFrom, to: rangeTo },
-    points,
-    summary,
-    geofence,
-    // Tell the client when the cap truncated the result so it can suggest a
-    // narrower date range instead of silently drawing a partial route.
-    truncated: points.length >= limit,
-  });
+  return ok(
+    res,
+    {
+      fixes: fixes.map((fix) => Location.toPublic({ ...fix, patient: req.targetPatient._id })),
+      summary: {
+        points: fixes.length,
+        distanceMeters: Math.round(pathDistance(fixes)),
+        minutesOutsideSafeZone,
+        outsideFixes: outsideCount,
+        firstFixAt: fixes[0]?.recordedAt || null,
+        lastFixAt: fixes[fixes.length - 1]?.recordedAt || null,
+      },
+    },
+    { points: fixes.length, limit: limit ?? 2000 }
+  );
 });
 
-/**
- * GET /api/location/trail/:patientId
- * Short recent trail (default 50 points) drawn behind the live map marker.
- */
-const getTrail = asyncHandler(async (req, res) => {
-  const limit = Math.min(Number(req.query.limit) || 50, 500);
-
-  const points = await Location.find({ patient: req.patient._id })
-    .sort({ recordedAt: -1 })
-    .limit(limit)
-    .select('latitude longitude accuracy zoneState recordedAt isQueued')
+/** GET /api/location/alerts/:patientId — recent alerts beside the history. */
+const patientAlerts = asyncHandler(async (req, res) => {
+  const alerts = await Alert.find({ patient: req.targetPatient._id })
+    .sort({ createdAt: -1 })
+    .limit(50)
     .lean();
 
-  // Query is newest-first for the index; the map wants oldest-first.
-  return ok(res, { points: points.reverse() });
+  return ok(
+    res,
+    alerts.map((alert) => Alert.toPublic(alert, req.targetPatient.name))
+  );
 });
 
 module.exports = {
-  startTrackingSession,
-  createLocation,
-  createLocationBatch,
-  triggerSos,
-  reportDeviceEvent,
-  getLatestLocation,
-  getHistory,
-  getTrail,
+  updateLocation,
+  ping,
+  raiseSos,
+  deviceEvent,
+  myStatus,
+  latestLocation,
+  locationHistory,
+  patientAlerts,
 };

@@ -1,105 +1,80 @@
 /**
  * /api/location
  *
- * This router mixes two very different audiences:
- *
- *  - The patient's phone (no login). It authenticates with the patient's
- *    tracking code and may only *write* its own fixes.
- *  - The caretaker dashboard (JWT). It may only *read*, and only for patients
- *    it owns.
- *
- * The write routes are declared first and each is explicitly gated by
- * `requireTrackingCode`, so no caretaker route can accidentally inherit the
- * patient-facing authentication.
+ * Split cleanly by role: the write endpoints take a patient token and act on
+ * "me", the read endpoints take a caretaker token and name a patient. No route
+ * here accepts a patient id from a patient-authenticated client, so a device
+ * cannot write a fix against someone else.
  */
 const express = require('express');
 const controller = require('../controllers/location.controller');
 const { validate } = require('../middleware/validate.middleware');
+const { ingestLimiter } = require('../middleware/rateLimit.middleware');
 const {
-  requireAuth,
-  requireTrackingCode,
+  requireCaretaker,
+  requirePatient,
   requirePatientOwnership,
 } = require('../middleware/auth.middleware');
-const { ingestLimiter } = require('../middleware/rateLimit.middleware');
 const schemas = require('../validators/location.validator');
-const { patientIdParam, trackingCode } = require('../validators/common.validator');
-const { z } = require('zod');
+const { patientIdParam } = require('../validators/common.validator');
 
 const router = express.Router();
 
-// ---------------------------------------------------------------- patient side
+/* ----------------------------------------------- patient device (writes) --- */
 
-/** Open a tracking session when the patient portal loads. */
+// `requirePatient` runs before the limiter so the limiter can key on the
+// authenticated patient id rather than on a spoofable body field.
 router.post(
-  '/session/:trackingCode',
+  '/update',
+  requirePatient,
   ingestLimiter,
-  validate({ params: z.object({ trackingCode }) }),
-  requireTrackingCode,
-  controller.startTrackingSession
+  validate({ body: schemas.updateLocationSchema }),
+  controller.updateLocation
 );
 
-/** A single live fix, posted every ~5 seconds. */
 router.post(
-  '/',
+  '/ping',
+  requirePatient,
   ingestLimiter,
-  validate({ body: schemas.createLocationSchema }),
-  requireTrackingCode,
-  controller.createLocation
+  validate({ body: schemas.pingSchema }),
+  controller.ping
 );
 
-/** A backlog of fixes buffered while the phone was offline. */
-router.post(
-  '/batch',
-  ingestLimiter,
-  validate({ body: schemas.batchLocationSchema }),
-  requireTrackingCode,
-  controller.createLocationBatch
-);
+router.post('/sos', requirePatient, validate({ body: schemas.sosSchema }), controller.raiseSos);
 
-/** SOS button. */
-router.post(
-  '/sos',
-  ingestLimiter,
-  validate({ body: schemas.sosSchema }),
-  requireTrackingCode,
-  controller.triggerSos
-);
-
-/** GPS / connectivity problems the phone observed. */
 router.post(
   '/device-event',
-  ingestLimiter,
+  requirePatient,
   validate({ body: schemas.deviceEventSchema }),
-  requireTrackingCode,
-  controller.reportDeviceEvent
+  controller.deviceEvent
 );
 
-// -------------------------------------------------------------- caretaker side
+router.get('/me', requirePatient, controller.myStatus);
 
-router.use(requireAuth);
+/* ------------------------------------------------ caretaker side (reads) --- */
 
-/** Route history for the history page and playback. */
+router.get(
+  '/latest/:patientId',
+  requireCaretaker,
+  validate({ params: patientIdParam }),
+  requirePatientOwnership,
+  controller.latestLocation
+);
+
 router.get(
   '/history/:patientId',
+  requireCaretaker,
   validate({ params: patientIdParam, query: schemas.historyQuerySchema }),
   requirePatientOwnership,
-  controller.getHistory
+  controller.locationHistory
 );
 
-/** Short recent trail drawn behind the live marker. */
 router.get(
-  '/trail/:patientId',
+  '/alerts/:patientId',
+  requireCaretaker,
   validate({ params: patientIdParam }),
   requirePatientOwnership,
-  controller.getTrail
-);
-
-/** Latest known fix. Declared last so it cannot shadow the paths above. */
-router.get(
-  '/:patientId',
-  validate({ params: patientIdParam }),
-  requirePatientOwnership,
-  controller.getLatestLocation
+  controller.patientAlerts
 );
 
 module.exports = router;

@@ -1,10 +1,10 @@
 /**
  * Patient presence tracking.
  *
- * A patient's phone posts a fix every ~5 seconds. If nothing arrives for
- * `OFFLINE_THRESHOLD_MS` the device has lost connectivity, been closed, or run
- * out of battery — all of which the caretaker needs to know about, because a
- * silent tracker is indistinguishable from a safe patient.
+ * A patient's phone posts a fix every three minutes. If nothing arrives for
+ * `OFFLINE_THRESHOLD_MS` — a little over two cycles — the device has lost
+ * connectivity, been closed, or run out of battery. All of those matter to the
+ * caretaker, because a silent tracker is indistinguishable from a safe patient.
  *
  * A periodic sweep (rather than a per-patient timer) keeps this O(1) in timers
  * no matter how many patients exist.
@@ -37,8 +37,8 @@ async function sweepOfflinePatients() {
     patient.liveStatus.isOnline = false;
     await patient.save();
 
-    const secondsSilent = Math.round(
-      (Date.now() - new Date(patient.liveStatus.lastSeenAt).getTime()) / 1000
+    const minutesSilent = Math.round(
+      (Date.now() - new Date(patient.liveStatus.lastSeenAt).getTime()) / 60000
     );
 
     emitter.emitToCaretaker(patient.caretaker, SOCKET_EVENTS.PRESENCE_UPDATE, {
@@ -53,8 +53,8 @@ async function sweepOfflinePatients() {
       patient,
       type: ALERT_TYPES.PATIENT_OFFLINE,
       message:
-        `No location update from ${patient.name} for ${secondsSilent} seconds. ` +
-        `The device may be offline, closed or out of battery.`,
+        `No location update from ${patient.name} for ${minutesSilent} minutes. ` +
+        'The device may be offline, the page closed, or the battery flat.',
       location: {
         latitude: patient.liveStatus.latitude,
         longitude: patient.liveStatus.longitude,
@@ -62,7 +62,7 @@ async function sweepOfflinePatients() {
       },
       metadata: {
         lastSeenAt: patient.liveStatus.lastSeenAt,
-        secondsSinceLastFix: secondsSilent,
+        minutesSinceLastFix: minutesSilent,
         thresholdMs: env.OFFLINE_THRESHOLD_MS,
       },
     });

@@ -1,178 +1,123 @@
 /**
- * Alert feed, filtering and acknowledgement.
+ * Alert feed and acknowledgement.
  */
 const { Alert, Patient } = require('../models');
-const { ok, created, paginationMeta } = require('../utils/response');
-const { SEVERITY } = require('../utils/constants');
 const alertService = require('../services/alert.service');
-const analyticsService = require('../services/analytics.service');
-const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/ApiError');
+const asyncHandler = require('../utils/asyncHandler');
+const { ok, paginationMeta } = require('../utils/response');
+
+/**
+ * Build the Mongo query from the filter query string.
+ * Every query is scoped to the signed-in caretaker.
+ */
+function buildQuery(caretakerId, filters) {
+  const query = { caretaker: caretakerId };
+
+  if (filters.patientId) query.patient = filters.patientId;
+  if (filters.type) query.type = filters.type;
+  if (filters.severity) query.severity = filters.severity;
+  if (filters.unreadOnly) query.isRead = false;
+  if (filters.unresolvedOnly) query.isResolved = false;
+
+  if (filters.from || filters.to) {
+    query.createdAt = {};
+    if (filters.from) query.createdAt.$gte = new Date(filters.from);
+    if (filters.to) query.createdAt.$lte = new Date(filters.to);
+  }
+
+  return query;
+}
 
 /**
  * GET /api/alerts
- * The paginated, filterable alert feed.
+ *
+ * The whole feed across every patient, paginated and filterable.
  */
 const listAlerts = asyncHandler(async (req, res) => {
-  const { page, limit, type, severity, patient, status, from, to, sort } = req.query;
+  const { page, limit, ...filters } = req.query;
 
-  const query = { caretaker: req.user._id };
-
-  if (type !== 'all') query.type = type;
-  if (severity !== 'all') query.severity = severity;
-  if (patient) query.patient = patient;
-
-  if (status === 'unread') query.isRead = false;
-  else if (status === 'read') query.isRead = true;
-  else if (status === 'resolved') query.isResolved = true;
-  else if (status === 'unresolved') query.isResolved = false;
-
-  if (from || to) {
-    query.createdAt = {};
-    if (from) query.createdAt.$gte = new Date(from);
-    if (to) query.createdAt.$lte = new Date(to);
+  if (filters.patientId) {
+    const owned = await Patient.countDocuments({
+      _id: filters.patientId,
+      caretaker: req.caretaker._id,
+    });
+    if (!owned) throw ApiError.notFound('Patient not found');
   }
 
-  const sortSpec = sort
-    ? { [sort.replace(/^-/, '')]: sort.startsWith('-') ? -1 : 1 }
-    : { createdAt: -1 };
+  const query = buildQuery(req.caretaker._id, filters);
 
-  const [alerts, total, unreadCount] = await Promise.all([
+  const [alerts, total] = await Promise.all([
     Alert.find(query)
-      .sort(sortSpec)
+      .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
-      .populate('patient', 'name trackingCode liveStatus.batteryLevel')
-      .populate('dangerZone', 'name category')
+      .populate('patient', 'name')
       .lean(),
     Alert.countDocuments(query),
-    Alert.countDocuments({ caretaker: req.user._id, isRead: false }),
   ]);
 
-  return ok(res, alerts, { ...paginationMeta({ page, limit, total }), unreadCount });
+  return ok(
+    res,
+    alerts.map((alert) => Alert.toPublic(alert)),
+    paginationMeta({ page, limit, total })
+  );
 });
 
 /**
- * GET /api/alerts/summary
- * Counts for the badge and the alerts page header tiles.
+ * GET /api/alerts/:patientId
+ *
+ * One patient's alerts. Ownership is enforced by `requirePatientOwnership`.
  */
-const getAlertSummary = asyncHandler(async (req, res) => {
-  const today = analyticsService.startOfToday();
+const listPatientAlerts = asyncHandler(async (req, res) => {
+  const { page, limit } = req.query;
+  const query = { patient: req.targetPatient._id, caretaker: req.caretaker._id };
 
-  const [total, unread, unresolved, todayCount, critical, byType] = await Promise.all([
-    Alert.countDocuments({ caretaker: req.user._id }),
-    Alert.countDocuments({ caretaker: req.user._id, isRead: false }),
-    Alert.countDocuments({ caretaker: req.user._id, isResolved: false }),
-    Alert.countDocuments({ caretaker: req.user._id, createdAt: { $gte: today } }),
-    Alert.countDocuments({
-      caretaker: req.user._id,
-      severity: SEVERITY.CRITICAL,
-      isResolved: false,
-    }),
-    Alert.aggregate([
-      { $match: { caretaker: req.user._id } },
-      { $group: { _id: '$type', count: { $sum: 1 } } },
-      { $sort: { count: -1 } },
-    ]),
+  const [alerts, total] = await Promise.all([
+    Alert.find(query)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean(),
+    Alert.countDocuments(query),
   ]);
 
-  return ok(res, {
-    total,
-    unread,
-    unresolved,
-    today: todayCount,
-    criticalUnresolved: critical,
-    byType: byType.reduce((acc, row) => ({ ...acc, [row._id]: row.count }), {}),
-  });
+  return ok(
+    res,
+    alerts.map((alert) => Alert.toPublic(alert, req.targetPatient.name)),
+    paginationMeta({ page, limit, total })
+  );
 });
 
-/**
- * GET /api/alerts/:id
- */
-const getAlert = asyncHandler(async (req, res) => {
-  const alert = await Alert.findOne({ _id: req.params.id, caretaker: req.user._id })
-    .populate('patient', 'name age trackingCode emergencyContact homeLocation liveStatus')
-    .populate('dangerZone')
-    .populate('geofence')
-    .lean();
-
-  if (!alert) throw ApiError.notFound('Alert not found');
-  return ok(res, { alert });
-});
-
-/**
- * POST /api/alerts
- * Manual alert logged by the caretaker.
- */
-const createAlert = asyncHandler(async (req, res) => {
-  const { patient: patientId, type, message, severity, latitude, longitude, metadata } = req.body;
-
-  // Confirm ownership before writing an alert against this patient.
-  const patient = await Patient.findOne({ _id: patientId, caretaker: req.user._id });
-  if (!patient) throw ApiError.notFound('Patient not found');
-
-  const alert = await alertService.createAlert({
-    patient,
-    type,
-    message,
-    severity,
-    location:
-      Number.isFinite(latitude) && Number.isFinite(longitude)
-        ? { latitude, longitude, accuracy: null }
-        : null,
-    metadata: { ...metadata, source: 'manual', createdBy: String(req.user._id) },
-    bypassCooldown: true, // a caretaker asked for this one explicitly
-  });
-
-  return created(res, { alert });
-});
-
-/**
- * PATCH /api/alerts/:id/read
- */
+/** PUT /api/alerts/:id/read */
 const markRead = asyncHandler(async (req, res) => {
-  const alert = await alertService.markRead(req.params.id, req.user._id);
+  const alert = await alertService.markRead(req.params.id, req.caretaker._id);
   if (!alert) throw ApiError.notFound('Alert not found');
-  return ok(res, { alert: alert.toJSON() });
+  return ok(res, Alert.toPublic(alert));
 });
 
-/**
- * PATCH /api/alerts/read-all
- */
-const markAllRead = asyncHandler(async (req, res) => {
-  const count = await alertService.markAllRead(req.user._id);
-  return ok(res, { updated: count });
-});
-
-/**
- * PATCH /api/alerts/:id/resolve
- */
-const resolveAlert = asyncHandler(async (req, res) => {
+/** PUT /api/alerts/:id/resolved */
+const markResolved = asyncHandler(async (req, res) => {
   const alert = await alertService.resolveAlert(
     req.params.id,
-    req.user._id,
-    req.body.resolutionNote
+    req.caretaker._id,
+    req.body?.resolutionNote || ''
   );
   if (!alert) throw ApiError.notFound('Alert not found');
-  return ok(res, { alert: alert.toJSON() });
+  return ok(res, Alert.toPublic(alert));
 });
 
-/**
- * DELETE /api/alerts/:id
- */
-const deleteAlert = asyncHandler(async (req, res) => {
-  const result = await Alert.deleteOne({ _id: req.params.id, caretaker: req.user._id });
-  if (!result.deletedCount) throw ApiError.notFound('Alert not found');
-  return ok(res, { message: 'Alert deleted' });
+/** PUT /api/alerts/read-all */
+const markAllRead = asyncHandler(async (req, res) => {
+  const patientId = req.body?.patientId || null;
+
+  if (patientId) {
+    const owned = await Patient.countDocuments({ _id: patientId, caretaker: req.caretaker._id });
+    if (!owned) throw ApiError.notFound('Patient not found');
+  }
+
+  const updated = await alertService.markAllRead(req.caretaker._id, patientId);
+  return ok(res, { updated });
 });
 
-module.exports = {
-  listAlerts,
-  getAlertSummary,
-  getAlert,
-  createAlert,
-  markRead,
-  markAllRead,
-  resolveAlert,
-  deleteAlert,
-};
+module.exports = { listAlerts, listPatientAlerts, markRead, markResolved, markAllRead };

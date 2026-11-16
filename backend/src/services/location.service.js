@@ -15,6 +15,7 @@ const { Location, Patient } = require('../models');
 const { isValidCoordinate } = require('../utils/geo');
 const { SOCKET_EVENTS, ZONE_STATE } = require('../utils/constants');
 const geofenceService = require('./geofence.service');
+const sessionService = require('./session.service');
 const emitter = require('../sockets/emitter');
 const ApiError = require('../utils/ApiError');
 const logger = require('../utils/logger');
@@ -31,6 +32,16 @@ function normaliseFix(raw) {
 
   const recordedAt = raw.recordedAt || raw.timestamp;
   const parsedDate = recordedAt ? new Date(recordedAt) : new Date();
+  const isUnparseable = Number.isNaN(parsedDate.getTime());
+
+  /**
+   * Guard against a device clock that is wrong or unparseable, and against a
+   * fix dated in the future — a phone with a skewed clock would otherwise sort
+   * ahead of every real fix and corrupt transition ordering for good.
+   */
+  const safeDate = isUnparseable || parsedDate.getTime() > Date.now() + 60_000
+    ? new Date()
+    : parsedDate;
 
   return {
     latitude: num(raw.latitude ?? raw.lat),
@@ -41,20 +52,19 @@ function normaliseFix(raw) {
     heading: num(raw.heading),
     batteryLevel: num(raw.batteryLevel),
     isCharging: typeof raw.isCharging === 'boolean' ? raw.isCharging : null,
-    isQueued: Boolean(raw.isQueued),
-    // Guard against a device clock that is wildly wrong or unparseable.
-    recordedAt: Number.isNaN(parsedDate.getTime()) ? new Date() : parsedDate,
+    isQueued: Boolean(raw.isQueued ?? raw.queued),
+    recordedAt: safeDate,
   };
 }
 
 /**
  * Ingest a single fix for a patient.
  *
- * @param {object} patient Patient document (will be saved with fresh liveStatus)
- * @param {object} rawFix  payload from the patient portal
- * @returns {Promise<{location:object, evaluation:object}>}
+ * @param {object} patient Patient document (saved with fresh liveStatus)
+ * @param {object} rawFix payload from the patient device
+ * @param {{ trackingSessionId?: string }} [options]
  */
-async function ingestFix(patient, rawFix) {
+async function ingestFix(patient, rawFix, options = {}) {
   const fix = normaliseFix(rawFix);
 
   if (!isValidCoordinate(fix)) {
@@ -73,10 +83,11 @@ async function ingestFix(patient, rawFix) {
   const location = await Location.create({
     patient: patient._id,
     caretaker: patient.caretaker,
+    trackingSession: options.trackingSessionId || null,
     ...fix,
     zoneState: evaluation.zoneState,
     isInsideSafeZone: evaluation.isInsideSafeZone,
-    distanceFromHome: evaluation.distanceFromHome,
+    distanceFromSafeZone: evaluation.distanceFromSafeZone,
     dangerZones: evaluation.dangerZoneIds,
     receivedAt: new Date(),
   });
@@ -85,8 +96,8 @@ async function ingestFix(patient, rawFix) {
   //
   // Battery is "last known" rather than "last reported": the Battery Status
   // API is unavailable in Firefox and Safari, and queued fixes may predate a
-  // reading, so a fix without a battery level must not erase the level we
-  // already had. Position fields always come from the current fix.
+  // reading, so a fix without a battery level must not erase the level already
+  // held. Position fields always come from the current fix.
   const previousStatus = patient.liveStatus || {};
   const batteryLevel = Number.isFinite(fix.batteryLevel)
     ? fix.batteryLevel
@@ -104,7 +115,8 @@ async function ingestFix(patient, rawFix) {
     isCharging,
     zoneState: evaluation.zoneState,
     activeDangerZones: evaluation.dangerZoneIds,
-    distanceFromHome: evaluation.distanceFromHome,
+    dangerZoneName: evaluation.dangerZoneName,
+    distanceFromSafeZone: evaluation.distanceFromSafeZone,
     lastSeenAt: new Date(),
     lastFixAt: fix.recordedAt,
   };
@@ -122,9 +134,10 @@ async function ingestFix(patient, rawFix) {
     batteryLevel,
     isCharging,
     zoneState: evaluation.zoneState,
-    isInsideSafeZone: evaluation.isInsideSafeZone,
-    distanceFromHome: evaluation.distanceFromHome,
-    dangerZones: evaluation.dangerZoneIds,
+    insideSafeZone: evaluation.isInsideSafeZone,
+    distanceFromSafeZone: evaluation.distanceFromSafeZone,
+    dangerZone: evaluation.dangerZoneName,
+    dangerZoneIds: evaluation.dangerZoneIds,
     isQueued: fix.isQueued,
     recordedAt: fix.recordedAt,
     locationId: String(location._id),
@@ -136,16 +149,20 @@ async function ingestFix(patient, rawFix) {
 }
 
 /**
- * Ingest a batch of queued fixes uploaded after an internet outage.
+ * Ingest a batch of fixes.
+ *
+ * The device always posts an array — one fix in the normal case, several when
+ * draining an offline queue — so there is a single code path for both.
  *
  * Fixes are sorted oldest-first so zone transitions replay in the order they
- * actually happened. One bad fix in the batch must not reject the rest, so each
- * is handled independently and failures are reported back per-item.
+ * actually happened. One bad fix must not reject the rest, so each is handled
+ * independently and failures are reported back per item.
  *
  * @param {object} patient
  * @param {object[]} rawFixes
+ * @param {{ trackingSessionId?: string }} [options]
  */
-async function ingestBatch(patient, rawFixes) {
+async function ingestBatch(patient, rawFixes, options = {}) {
   const sorted = [...rawFixes]
     .map((raw) => ({ raw, normalised: normaliseFix(raw) }))
     .filter((entry) => isValidCoordinate(entry.normalised))
@@ -153,17 +170,27 @@ async function ingestBatch(patient, rawFixes) {
 
   const accepted = [];
   const rejected = [];
+  let lastEvaluation = null;
+  let queuedCount = 0;
 
   for (const entry of sorted) {
     try {
-      // Mark every fix in a batch as queued so the UI can distinguish
-      // backfilled points from live ones on the map trail.
-      const { location } = await ingestFix(patient, { ...entry.raw, isQueued: true });
+      const { location, evaluation } = await ingestFix(patient, entry.raw, options);
       accepted.push(String(location._id));
+      lastEvaluation = evaluation;
+      if (entry.normalised.isQueued) queuedCount += 1;
     } catch (err) {
-      logger.warn(`Rejected queued fix for patient ${patient._id}: ${err.message}`);
+      logger.warn(`Rejected fix for patient ${patient._id}: ${err.message}`);
       rejected.push({ recordedAt: entry.normalised.recordedAt, reason: err.message });
     }
+  }
+
+  if (accepted.length) {
+    await sessionService.recordFixes(patient._id, {
+      total: accepted.length,
+      queued: queuedCount,
+      lastFixAt: sorted[sorted.length - 1].normalised.recordedAt,
+    });
   }
 
   const skipped = rawFixes.length - sorted.length;
@@ -174,6 +201,12 @@ async function ingestBatch(patient, rawFixes) {
     rejected: rejected.length + skipped,
     acceptedIds: accepted,
     errors: rejected,
+    // The caller echoes the final zone verdict back to the device so the
+    // patient screen can say "you are at home" without evaluating zones itself.
+    insideSafeZone: lastEvaluation?.isInsideSafeZone ?? null,
+    dangerZone: lastEvaluation?.dangerZoneName ?? null,
+    distanceFromSafeZone: lastEvaluation?.distanceFromSafeZone ?? null,
+    alerts: [],
   };
 }
 
@@ -185,8 +218,8 @@ async function getLatestLocation(patientId) {
 /**
  * Location history for a patient within a time range.
  *
- * `limit` caps the number of points returned so a week of 5-second fixes
- * (~120k documents) cannot be pulled into the browser in one go.
+ * `limit` caps the number of points returned so a long window cannot be pulled
+ * into the browser in one go.
  */
 async function getHistory(patientId, { from, to, limit = 2000 } = {}) {
   const query = { patient: patientId };
@@ -196,15 +229,13 @@ async function getHistory(patientId, { from, to, limit = 2000 } = {}) {
     if (to) query.recordedAt.$lte = new Date(to);
   }
 
-  const points = await Location.find(query)
+  return Location.find(query)
     .sort({ recordedAt: 1 })
     .limit(limit)
     .select(
-      'latitude longitude accuracy speed zoneState isInsideSafeZone distanceFromHome isQueued recordedAt'
+      'latitude longitude accuracy speed zoneState isInsideSafeZone distanceFromSafeZone isQueued recordedAt'
     )
     .lean();
-
-  return points;
 }
 
 /** Mark a patient offline and broadcast the change. */

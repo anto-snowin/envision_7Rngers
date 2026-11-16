@@ -1,61 +1,61 @@
 /**
- * Patient CRUD schemas.
+ * Request schemas for patient management.
  */
 const { z } = require('zod');
-const { latitude, longitude, pagination } = require('./common.validator');
+const { password } = require('./common.validator');
 
-const emergencyContact = z.object({
-  name: z.string().trim().max(80).optional().default(''),
-  relationship: z.string().trim().max(60).optional().default(''),
-  phone: z.string().trim().max(32).optional().default(''),
-  altPhone: z.string().trim().max(32).optional().default(''),
-});
+/** Blank optional strings are normalised to undefined, not stored as "". */
+const optionalText = (max) =>
+  z
+    .string()
+    .trim()
+    .max(max)
+    .optional()
+    .transform((value) => (value === '' ? undefined : value));
 
-const homeLocation = z.object({
-  label: z.string().trim().max(60).optional().default('Home'),
-  address: z.string().trim().max(300).optional().default(''),
-  latitude: latitude.nullable().optional(),
-  longitude: longitude.nullable().optional(),
-});
+const optionalEmail = z
+  .union([z.literal(''), z.string().trim().toLowerCase().pipe(z.email('Enter a valid email'))])
+  .optional()
+  .transform((value) => (value === '' ? null : value));
+
+const patientFields = {
+  email: optionalEmail,
+  phone: optionalText(32),
+  age: z.coerce.number().int().min(0).max(130).nullable().optional(),
+  gender: z.enum(['male', 'female', 'other', 'unspecified']).optional(),
+  emergencyContactName: optionalText(80),
+  emergencyContactPhone: optionalText(32),
+  emergencyContactRelationship: optionalText(40),
+  medicalNotes: optionalText(4000),
+  isActive: z.boolean().optional(),
+};
 
 const createPatientSchema = z.object({
-  name: z.string().trim().min(2, 'Patient name is required').max(80),
-  age: z.coerce.number().int().min(0).max(130).nullable().optional(),
-  gender: z.enum(['male', 'female', 'other', 'unspecified']).optional().default('unspecified'),
-  conditionStage: z
-    .enum(['early', 'moderate', 'advanced', 'unspecified'])
-    .optional()
-    .default('unspecified'),
-  photoUrl: z.string().trim().max(500).optional().default(''),
-  medicalNotes: z.string().trim().max(4000).optional().default(''),
-  emergencyContact: emergencyContact.optional(),
-  homeLocation: homeLocation.optional(),
+  name: z.string().trim().min(2, "Enter the patient's name").max(80),
   /**
-   * Convenience: when a home location and this radius are both supplied, the
-   * controller creates the matching safe-zone geofence in the same request so
-   * the caretaker does not have to visit a second screen.
+   * Optional: when the caretaker does not choose one, the server generates a
+   * readable temporary password and returns it once.
    */
-  safeZoneRadius: z.coerce.number().min(20).max(20000).optional(),
+  password: password.optional(),
+  ...patientFields,
 });
 
-/** Every field optional on update; `.partial()` keeps the rules identical. */
-const updatePatientSchema = createPatientSchema.partial().extend({
-  isActive: z.boolean().optional(),
+const updatePatientSchema = z.object({
+  name: z.string().trim().min(2, "Enter the patient's name").max(80).optional(),
+  ...patientFields,
 });
 
-/** List query: pagination plus dashboard-specific filters. */
-const listPatientsSchema = pagination.extend({
-  status: z.enum(['all', 'online', 'offline']).optional().default('all'),
-  zone: z
-    .enum(['all', 'inside_safe', 'outside_safe', 'in_danger', 'unknown'])
-    .optional()
-    .default('all'),
+const resetPasswordSchema = z.object({
+  password: password.optional(),
+});
+
+const listPatientsSchema = z.object({
+  search: z.string().trim().max(120).optional(),
 });
 
 module.exports = {
   createPatientSchema,
   updatePatientSchema,
+  resetPasswordSchema,
   listPatientsSchema,
-  emergencyContact,
-  homeLocation,
 };

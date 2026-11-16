@@ -8,9 +8,8 @@ const authRoutes = require('./auth.routes');
 const patientRoutes = require('./patient.routes');
 const locationRoutes = require('./location.routes');
 const alertRoutes = require('./alert.routes');
-const geofenceRoutes = require('./geofence.routes');
-const dangerZoneRoutes = require('./dangerZone.routes');
-const analyticsRoutes = require('./analytics.routes');
+const zoneRoutes = require('./zone.routes');
+const dashboardRoutes = require('./dashboard.routes');
 
 const router = express.Router();
 
@@ -41,8 +40,7 @@ router.use('/auth', authRoutes);
 router.use('/patients', patientRoutes);
 router.use('/location', locationRoutes);
 router.use('/alerts', alertRoutes);
-router.use('/geofence', geofenceRoutes);
-router.use('/danger-zone', dangerZoneRoutes);
-router.use('/analytics', analyticsRoutes);
+router.use('/zones', zoneRoutes);
+router.use('/dashboard', dashboardRoutes);
 
 module.exports = router;

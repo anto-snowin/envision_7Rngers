@@ -1,33 +1,36 @@
 /**
- * /api/alerts — caretaker-only.
+ * /api/alerts — caretaker-only alert feed and acknowledgement.
  */
 const express = require('express');
 const controller = require('../controllers/alert.controller');
 const { validate } = require('../middleware/validate.middleware');
-const { requireAuth } = require('../middleware/auth.middleware');
+const { requireCaretaker, requirePatientOwnership } = require('../middleware/auth.middleware');
 const schemas = require('../validators/alert.validator');
-const { idParam } = require('../validators/common.validator');
+const { idParam, patientIdParam } = require('../validators/common.validator');
 
 const router = express.Router();
 
-router.use(requireAuth);
+router.use(requireCaretaker);
 
-router
-  .route('/')
-  .get(validate({ query: schemas.listAlertsSchema }), controller.listAlerts)
-  .post(validate({ body: schemas.createAlertSchema }), controller.createAlert);
+router.get('/', validate({ query: schemas.listAlertsSchema }), controller.listAlerts);
 
-// Static paths before `/:id`.
-router.get('/summary', controller.getAlertSummary);
-router.patch('/read-all', controller.markAllRead);
+// Declared before `/:id/...` only for readability; the paths differ in segment
+// count, so there is no ambiguity for the router to resolve.
+router.put('/read-all', validate({ body: schemas.markAllReadSchema }), controller.markAllRead);
 
-router.get('/:id', validate({ params: idParam }), controller.getAlert);
-router.patch('/:id/read', validate({ params: idParam }), controller.markRead);
-router.patch(
-  '/:id/resolve',
+router.put('/:id/read', validate({ params: idParam }), controller.markRead);
+
+router.put(
+  '/:id/resolved',
   validate({ params: idParam, body: schemas.resolveAlertSchema }),
-  controller.resolveAlert
+  controller.markResolved
 );
-router.delete('/:id', validate({ params: idParam }), controller.deleteAlert);
+
+router.get(
+  '/:patientId',
+  validate({ params: patientIdParam, query: schemas.pagination }),
+  requirePatientOwnership,
+  controller.listPatientAlerts
+);
 
 module.exports = router;

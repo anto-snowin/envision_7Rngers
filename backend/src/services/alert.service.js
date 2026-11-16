@@ -6,7 +6,8 @@
  * the engine raised it.
  */
 const { Alert } = require('../models');
-const { ALERT_SEVERITY, ALERT_TITLES, SEVERITY, SOCKET_EVENTS } = require('../utils/constants');
+const { ALERT_SEVERITY, ALERT_TITLES, ALERT_TYPES, SEVERITY, SOCKET_EVENTS } =
+  require('../utils/constants');
 const env = require('../config/env');
 const logger = require('../utils/logger');
 const emitter = require('../sockets/emitter');
@@ -14,9 +15,10 @@ const emitter = require('../sockets/emitter');
 /**
  * Has an identical alert already been raised for this patient very recently?
  *
- * Without this, a patient sitting 5 m outside their safe zone would generate
- * an alert every 5 seconds — twelve per minute — and bury the caretaker. One
- * alert per type per cooldown window is enough to convey the situation.
+ * Transition detection in the geofence engine is the primary defence against
+ * repeats; this is the backstop for everything else — a device reporting GPS
+ * trouble on every attempt, for instance. One alert per type per cooldown
+ * window is enough to convey the situation.
  *
  * SOS is deliberately exempt: if the patient presses it twice, the caretaker
  * should see it twice.
@@ -26,7 +28,7 @@ const emitter = require('../sockets/emitter');
  * @param {string|null} dangerZoneId scopes the cooldown to one specific zone
  */
 async function isInCooldown(patientId, type, dangerZoneId = null) {
-  if (type === 'SOS') return false;
+  if (type === ALERT_TYPES.SOS) return false;
 
   const since = new Date(Date.now() - env.ALERT_COOLDOWN_MS);
   const query = { patient: patientId, type, createdAt: { $gte: since } };
@@ -40,25 +42,27 @@ async function isInCooldown(patientId, type, dangerZoneId = null) {
  * Create an alert and push it to the caretaker in real time.
  *
  * @param {object} input
- * @param {object} input.patient  the Patient document (or a lean object with _id + caretaker)
- * @param {string} input.type     one of ALERT_TYPES
+ * @param {object} input.patient document or lean object with `_id`, `name`, `caretaker`
+ * @param {string} input.type one of ALERT_TYPES
  * @param {string} [input.message]
+ * @param {string} [input.zoneName]
  * @param {object} [input.location] { latitude, longitude, accuracy }
  * @param {object} [input.metadata]
  * @param {string} [input.dangerZone]
- * @param {string} [input.geofence]
+ * @param {string} [input.safeZone]
  * @param {string} [input.severity] overrides the type's default severity
  * @param {boolean} [input.bypassCooldown]
- * @returns {Promise<object|null>} the alert, or null when suppressed by cooldown
+ * @returns {Promise<object|null>} the serialised alert, or null if suppressed
  */
 async function createAlert({
   patient,
   type,
   message = '',
+  zoneName = null,
   location = null,
   metadata = {},
   dangerZone = null,
-  geofence = null,
+  safeZone = null,
   severity = null,
   bypassCooldown = false,
 }) {
@@ -78,22 +82,22 @@ async function createAlert({
     severity: severity || ALERT_SEVERITY[type] || SEVERITY.MEDIUM,
     title: ALERT_TITLES[type] || 'Alert',
     message,
-    location: location || undefined,
+    zoneName,
+    location: location
+      ? {
+          latitude: location.latitude ?? null,
+          longitude: location.longitude ?? null,
+          accuracy: location.accuracy ?? null,
+        }
+      : undefined,
     metadata,
     dangerZone,
-    geofence,
+    safeZone,
   });
 
-  // Attach the patient's name so the dashboard can render the alert without a
-  // follow-up fetch.
-  const payload = {
-    ...alert.toJSON(),
-    patient: {
-      _id: String(patientId),
-      name: patient.name,
-      trackingCode: patient.trackingCode,
-    },
-  };
+  // The patient's name travels with the alert so the dashboard can render the
+  // row without a follow-up fetch per alert.
+  const payload = Alert.toPublic(alert, patient.name);
 
   emitter.emitToCaretaker(patient.caretaker, SOCKET_EVENTS.ALERT_NEW, payload);
   logger.info(`Alert raised: ${type} for patient ${patient.name || patientId}`);
@@ -101,25 +105,28 @@ async function createAlert({
   return payload;
 }
 
-/** Mark one alert read. */
+/** Mark one alert read. Scoped to the caretaker who owns it. */
 async function markRead(alertId, caretakerId) {
   const alert = await Alert.findOneAndUpdate(
     { _id: alertId, caretaker: caretakerId },
     { isRead: true, readAt: new Date() },
     { new: true }
-  );
+  ).populate('patient', 'name');
+
   if (alert) {
-    emitter.emitToCaretaker(caretakerId, SOCKET_EVENTS.ALERT_UPDATED, alert.toJSON());
+    emitter.emitToCaretaker(caretakerId, SOCKET_EVENTS.ALERT_UPDATED, Alert.toPublic(alert));
   }
   return alert;
 }
 
-/** Mark every unread alert for a caretaker as read. */
-async function markAllRead(caretakerId) {
-  const result = await Alert.updateMany(
-    { caretaker: caretakerId, isRead: false },
-    { isRead: true, readAt: new Date() }
-  );
+/** Mark every unread alert for a caretaker as read, optionally one patient's. */
+async function markAllRead(caretakerId, patientId = null) {
+  const query = { caretaker: caretakerId, isRead: false };
+  if (patientId) query.patient = patientId;
+
+  const result = await Alert.updateMany(query, { isRead: true, readAt: new Date() });
+
+  // A bulk change is cheaper to communicate as "refetch" than as N events.
   emitter.emitToCaretaker(caretakerId, SOCKET_EVENTS.ALERT_UPDATED, { refetch: true });
   return result.modifiedCount || 0;
 }
@@ -136,9 +143,10 @@ async function resolveAlert(alertId, caretakerId, resolutionNote = '') {
       resolutionNote,
     },
     { new: true }
-  );
+  ).populate('patient', 'name');
+
   if (alert) {
-    emitter.emitToCaretaker(caretakerId, SOCKET_EVENTS.ALERT_UPDATED, alert.toJSON());
+    emitter.emitToCaretaker(caretakerId, SOCKET_EVENTS.ALERT_UPDATED, Alert.toPublic(alert));
   }
   return alert;
 }

@@ -67,7 +67,7 @@ const corsOptions = {
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Tracking-Code'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
   maxAge: 86400,
 };
 
@@ -98,9 +98,9 @@ app.get('/', (_req, res) =>
   res.json({
     success: true,
     data: {
-      name: 'Dementia Care Monitoring and Intelligent Geofencing System API',
-      version: '1.0.0',
-      documentation: '/api/health for status; see docs/API.md for endpoints',
+      name: 'Sentinel — Dementia Care GPS Monitoring API',
+      version: '2.0.0',
+      documentation: '/api/health for status; see docs/api.md for endpoints',
     },
   })
 );
