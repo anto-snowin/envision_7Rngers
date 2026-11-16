@@ -197,7 +197,12 @@ export const zones = {
 
 /* ---------------------------------------------------------------- alerts --- */
 
-export interface AlertFilters {
+/**
+ * Declared as a type alias, not an interface, so it is assignable to the
+ * client's `Query` record: TypeScript infers an implicit index signature for
+ * object type aliases but never for interfaces.
+ */
+export type AlertFilters = {
   patientId?: string;
   type?: string;
   severity?: string;
@@ -207,7 +212,7 @@ export interface AlertFilters {
   to?: string;
   page?: number;
   limit?: number;
-}
+};
 
 export const alerts = {
   list: async (query?: AlertFilters, signal?: AbortSignal) => {

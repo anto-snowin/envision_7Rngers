@@ -1,5 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { Figtree, Inter, JetBrains_Mono } from 'next/font/google';
+import { Providers } from '@/providers';
 import './globals.css';
 
 const figtree = Figtree({
@@ -44,7 +45,9 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className={`${figtree.variable} ${inter.variable} ${mono.variable} dark`}>
-      <body className="min-h-dvh bg-ink-950 antialiased">{children}</body>
+      <body className="min-h-dvh bg-ink-950 antialiased">
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }

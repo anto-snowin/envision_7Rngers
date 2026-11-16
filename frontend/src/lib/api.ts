@@ -66,7 +66,16 @@ export function readRole(): string | null {
   }
 }
 
-type Query = Record<string, string | number | boolean | null | undefined>;
+/**
+ * Query parameters.
+ *
+ * Typed as `unknown` values rather than a primitive union so that a plain
+ * interface describing one endpoint's filters can be passed directly —
+ * TypeScript will not assign an interface to a mapped type with a primitive
+ * value union, since the interface has no index signature. Non-primitive values
+ * are dropped when the URL is built.
+ */
+export type Query = Record<string, unknown>;
 
 export interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -84,6 +93,7 @@ function buildUrl(path: string, query?: Query) {
   if (query) {
     for (const [key, value] of Object.entries(query)) {
       if (value === null || value === undefined || value === '') continue;
+      if (typeof value === 'object') continue;
       url.searchParams.set(key, String(value));
     }
   }
